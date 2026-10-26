@@ -39,10 +39,10 @@ function setup(user: User | null) {
     { get: () => secret } as unknown as ConfigService<Env, true>,
   );
 
-  function run(route: keyof RoutesUnderTest, cookie?: string, targetStoreId?: string) {
-    const request = { headers: { cookie }, targetStoreId } as AuthenticatedRequest & {
-      targetStoreId?: string;
-    };
+  // `params` mirrors how a real store-scoped route carries the target store id;
+  // the guard resolves it from the request itself, before the handler runs.
+  function run(route: keyof RoutesUnderTest, cookie?: string, params: Record<string, string> = {}) {
+    const request = { headers: { cookie }, params } as unknown as AuthenticatedRequest;
     const context = {
       switchToHttp: () => ({ getRequest: () => request }),
       getHandler: () => RoutesUnderTest.prototype[route],
@@ -111,13 +111,23 @@ describe('AuthGuard', () => {
   it('lets a store employee act within their own store', async () => {
     const { run } = setup(staff); // storeId B01
 
-    await expect(run('storeScoped', sessionCookie('u1'), 'B01').result).resolves.toBe(true);
+    await expect(run('storeScoped', sessionCookie('u1'), { storeId: 'B01' }).result).resolves.toBe(
+      true,
+    );
   });
 
   it('rejects a store employee acting on another store', async () => {
     const { run } = setup(staff); // storeId B01
 
-    await expect(run('storeScoped', sessionCookie('u1'), 'B02').result).rejects.toBeInstanceOf(
+    await expect(
+      run('storeScoped', sessionCookie('u1'), { storeId: 'B02' }).result,
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects a store employee when the request carries no store id', async () => {
+    const { run } = setup(staff); // storeId B01, request has no storeId param
+
+    await expect(run('storeScoped', sessionCookie('u1')).result).rejects.toBeInstanceOf(
       ForbiddenException,
     );
   });
@@ -125,12 +135,16 @@ describe('AuthGuard', () => {
   it('lets a manager act on any store (not store-bound)', async () => {
     const { run } = setup({ ...staff, role: 'MANAGER', storeId: null });
 
-    await expect(run('storeScoped', sessionCookie('u1'), 'B02').result).resolves.toBe(true);
+    await expect(run('storeScoped', sessionCookie('u1'), { storeId: 'B02' }).result).resolves.toBe(
+      true,
+    );
   });
 
   it('lets an admin act on any store (not store-bound)', async () => {
     const { run } = setup({ ...staff, role: 'ADMIN', storeId: null });
 
-    await expect(run('storeScoped', sessionCookie('u1'), 'B02').result).resolves.toBe(true);
+    await expect(run('storeScoped', sessionCookie('u1'), { storeId: 'B02' }).result).resolves.toBe(
+      true,
+    );
   });
 });

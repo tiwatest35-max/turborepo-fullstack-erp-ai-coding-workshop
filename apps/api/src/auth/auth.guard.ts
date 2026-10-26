@@ -59,11 +59,31 @@ export class AuthGuard implements CanActivate {
 
     // Store-scoped routes: a store-bound user (one with a storeId) may only act
     // within their own store. ADMIN and MANAGER have a null storeId and bypass.
-    const storeScoped = this.reflector.getAllAndOverride<boolean>(STORE_SCOPED_KEY, targets);
-    if (storeScoped && request.user.storeId !== null) {
-      if (request.user.storeId !== request.targetStoreId) throw new ForbiddenException();
+    // The target store is resolved from the request (params > query > body) by
+    // the field named on `@StoreScoped(field)`; a store-bound user whose request
+    // carries no resolvable store id is rejected.
+    const storeField = this.reflector.getAllAndOverride<string | undefined>(
+      STORE_SCOPED_KEY,
+      targets,
+    );
+    if (storeField && request.user.storeId !== null) {
+      const targetStoreId = resolveField(request, storeField);
+      if (!targetStoreId || targetStoreId !== request.user.storeId) {
+        throw new ForbiddenException();
+      }
     }
 
     return true;
   }
+}
+
+/** Reads a string field from the request, preferring route params, then query, then body. */
+function resolveField(request: AuthenticatedRequest, field: string): string | undefined {
+  for (const source of [request.params, request.query, request.body] as Array<
+    Record<string, unknown> | undefined
+  >) {
+    const value = source?.[field];
+    if (typeof value === 'string') return value;
+  }
+  return undefined;
 }
