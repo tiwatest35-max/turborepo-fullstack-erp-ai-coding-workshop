@@ -16,7 +16,18 @@ datasource db {
 
 enum Role {
   ADMIN
-  STAFF
+  PURCHASING
+  STORE_EMPLOYEE
+  MANAGER
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
 }
 
 model User {
@@ -25,7 +36,10 @@ model User {
   name         String
   /// Written by hashPassword() from @erp/database. Never returned by the API.
   passwordHash String
-  role         Role     @default(STAFF)
+  role         Role     @default(STORE_EMPLOYEE)
+  /// The store a store-bound user may act in. Null for ADMIN and MANAGER.
+  storeId      String?
+  store        Store?   @relation(fields: [storeId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
