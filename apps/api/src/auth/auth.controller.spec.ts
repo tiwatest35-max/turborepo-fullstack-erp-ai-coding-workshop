@@ -10,7 +10,13 @@ import { AuthController } from './auth.controller.js';
 import { SESSION_COOKIE, verifySessionToken } from './session-token.js';
 
 const secret = 'test-secret-that-is-at-least-32-characters';
-const admin: User = { id: 'u1', email: 'admin@erp.local', name: 'Admin User', role: 'ADMIN' };
+const admin: User = {
+  id: 'u1',
+  email: 'admin@erp.local',
+  name: 'Admin User',
+  role: 'ADMIN',
+  storeId: null,
+};
 
 async function createController(findUnique = vi.fn()) {
   const moduleRef = await Test.createTestingModule({
