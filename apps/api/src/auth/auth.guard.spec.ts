@@ -5,12 +5,18 @@ import type { User } from '@erp/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../config/env.js';
 import type { PrismaService } from '../database/prisma.service.js';
-import { type AuthenticatedRequest, Public, Roles } from './auth.decorators.js';
+import { type AuthenticatedRequest, Public, Roles, StoreScoped } from './auth.decorators.js';
 import { AuthGuard } from './auth.guard.js';
 import { createSessionToken, SESSION_COOKIE } from './session-token.js';
 
 const secret = 'test-secret-that-is-at-least-32-characters';
-const staff: User = { id: 'u1', email: 'staff@erp.local', name: 'Staff User', role: 'STAFF' };
+const staff: User = {
+  id: 'u1',
+  email: 'staff@erp.local',
+  name: 'Staff User',
+  role: 'STORE_EMPLOYEE',
+  storeId: 'B01',
+};
 
 class RoutesUnderTest {
   @Public()
@@ -20,6 +26,9 @@ class RoutesUnderTest {
 
   @Roles('ADMIN')
   adminOnly() {}
+
+  @StoreScoped()
+  storeScoped() {}
 }
 
 function setup(user: User | null) {
@@ -30,8 +39,10 @@ function setup(user: User | null) {
     { get: () => secret } as unknown as ConfigService<Env, true>,
   );
 
-  function run(route: keyof RoutesUnderTest, cookie?: string) {
-    const request = { headers: { cookie } } as AuthenticatedRequest;
+  function run(route: keyof RoutesUnderTest, cookie?: string, targetStoreId?: string) {
+    const request = { headers: { cookie }, targetStoreId } as AuthenticatedRequest & {
+      targetStoreId?: string;
+    };
     const context = {
       switchToHttp: () => ({ getRequest: () => request }),
       getHandler: () => RoutesUnderTest.prototype[route],
@@ -95,5 +106,31 @@ describe('AuthGuard', () => {
     const { run } = setup({ ...staff, role: 'ADMIN' });
 
     await expect(run('adminOnly', sessionCookie('u1')).result).resolves.toBe(true);
+  });
+
+  it('lets a store employee act within their own store', async () => {
+    const { run } = setup(staff); // storeId B01
+
+    await expect(run('storeScoped', sessionCookie('u1'), 'B01').result).resolves.toBe(true);
+  });
+
+  it('rejects a store employee acting on another store', async () => {
+    const { run } = setup(staff); // storeId B01
+
+    await expect(run('storeScoped', sessionCookie('u1'), 'B02').result).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it('lets a manager act on any store (not store-bound)', async () => {
+    const { run } = setup({ ...staff, role: 'MANAGER', storeId: null });
+
+    await expect(run('storeScoped', sessionCookie('u1'), 'B02').result).resolves.toBe(true);
+  });
+
+  it('lets an admin act on any store (not store-bound)', async () => {
+    const { run } = setup({ ...staff, role: 'ADMIN', storeId: null });
+
+    await expect(run('storeScoped', sessionCookie('u1'), 'B02').result).resolves.toBe(true);
   });
 });
