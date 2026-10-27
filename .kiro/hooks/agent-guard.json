@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "agent-guard",
+      "trigger": "PreToolUse",
+      "description": "Runs scripts/agent-guard.mjs before every shell command; the guard exits 2 to block destructive or human-only commands and returns the reason on stderr.",
+      "matcher": "^(execute_bash|execute_pwsh)$",
+      "action": {
+        "type": "command",
+        "command": "node scripts/agent-guard.mjs",
+        "timeout": 60
+      }
+    }
+  ]
+}
