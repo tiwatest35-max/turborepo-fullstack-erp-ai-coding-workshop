@@ -47,7 +47,7 @@ const input = {
 };
 
 function prismaMock() {
-  return {
+  const prisma = {
     product: {
       create: vi.fn(),
       update: vi.fn(),
@@ -55,7 +55,11 @@ function prismaMock() {
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    purchaseOrderLine: { count: vi.fn().mockResolvedValue(0) },
+    // An update runs in a transaction; the stub hands the same stubbed client to the callback.
+    $transaction: vi.fn((run: (tx: unknown) => unknown) => run(prisma)),
   };
+  return prisma;
 }
 
 async function createController(prisma = prismaMock()) {

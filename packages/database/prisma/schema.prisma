@@ -31,6 +31,7 @@ model Store {
   reorderThresholds ProductReorderThreshold[]
   stockBalances     StockBalance[]
   stockMovements    StockMovement[]
+  purchaseOrders    PurchaseOrder[]
 }
 
 model User {
@@ -47,6 +48,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model Supplier {
@@ -58,24 +60,27 @@ model Supplier {
   contactEmail String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  purchaseOrders PurchaseOrder[]
 }
 
 model Product {
-  id                String                    @id @default(cuid())
+  id                 String                    @id @default(cuid())
   /// Unique across the organization (MD-01).
-  sku               String                    @unique
-  name              String
-  category          String
-  unit              String
+  sku                String                    @unique
+  name               String
+  category           String
+  unit               String
   /// THB, never negative (MD-02). Enforced by the contract schema.
-  sellingPrice      Decimal                   @db.Decimal(12, 2)
+  sellingPrice       Decimal                   @db.Decimal(12, 2)
   /// Deactivated products stay in lists and search (MD-02).
-  active            Boolean                   @default(true)
-  reorderThresholds ProductReorderThreshold[]
-  stockBalances     StockBalance[]
-  stockMovements    StockMovement[]
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
+  active             Boolean                   @default(true)
+  reorderThresholds  ProductReorderThreshold[]
+  stockBalances      StockBalance[]
+  stockMovements     StockMovement[]
+  purchaseOrderLines PurchaseOrderLine[]
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
 }
 
 /// The reorder threshold of one product in one store (MD-01). Whole units, never negative (MD-02).
@@ -146,4 +151,57 @@ model StockMovement {
 model DocumentSequence {
   prefix    String @id
   lastValue Int    @default(0)
+}
+
+/// Where a purchase order is in its life (PO-02). Only the first two exist so far; approval,
+/// receiving, rejection and cancellation add theirs with their own tickets.
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+}
+
+/// A purchase order for one supplier and one destination store (MD-03, PO-01). Creating,
+/// editing or submitting one never changes stock (PO-02).
+model PurchaseOrder {
+  id                  String              @id @default(cuid())
+  /// From DocumentNumberingService, e.g. PO-000001. Unique (TOR 4.3).
+  number              String              @unique
+  status              PurchaseOrderStatus @default(DRAFT)
+  supplierId          String
+  supplier            Supplier            @relation(fields: [supplierId], references: [id])
+  storeId             String
+  store               Store               @relation(fields: [storeId], references: [id])
+  /// A calendar date, no time of day.
+  expectedReceiptDate DateTime            @db.Date
+  createdById         String
+  createdBy           User                @relation(fields: [createdById], references: [id])
+  /// Null while the order is a draft.
+  submittedAt         DateTime?
+  lines               PurchaseOrderLine[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([createdAt])
+}
+
+/// One product on a purchase order (PO-01). SKU, name and unit are copied from the product
+/// when the line is saved, so later product edits never change the document (TOR 4.3).
+/// A line pointing at a product is what locks that product's SKU (MD-01).
+model PurchaseOrderLine {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  sku             String
+  productName     String
+  unit            String
+  /// Whole units, always above zero. The migration adds CHECK ("quantity" > 0).
+  quantity        Int
+  /// The purchase price per unit in THB. The migration adds CHECK ("unitPrice" >= 0).
+  unitPrice       Decimal       @db.Decimal(12, 2)
+
+  /// A product appears once per order (PO-01).
+  @@unique([purchaseOrderId, productId])
+  @@index([productId])
 }
