@@ -30,6 +30,12 @@ const STORE_UNKNOWN = apiError(
   'correct_input',
 );
 const NOT_FOUND = apiError('PRODUCT_NOT_FOUND', 'ไม่พบสินค้าที่ระบุ', 'correct_input');
+const skuLocked = (sku: string) =>
+  apiError(
+    'PRODUCT_SKU_LOCKED',
+    `เปลี่ยนรหัส SKU ${sku} ไม่ได้ เพราะมีใบสั่งซื้อใช้สินค้านี้แล้ว`,
+    'correct_input',
+  );
 
 /** What the queries ask Prisma to load so a row can be exposed as a `Product`. */
 const WITH_THRESHOLDS = { reorderThresholds: true } as const;
@@ -145,16 +151,29 @@ export class ProductsController {
     return implement(contract.products.update).handler(async ({ input, errors }) => {
       const { id, reorderThresholds, ...fields } = input;
       try {
-        const row = await this.prisma.product.update({
-          where: { id },
-          data: {
-            ...fields,
-            // Sent thresholds replace the product's whole set; absent leaves them alone.
-            ...(reorderThresholds && {
-              reorderThresholds: { deleteMany: {}, create: reorderThresholds },
-            }),
-          },
-          include: WITH_THRESHOLDS,
+        const row = await this.prisma.$transaction(async (tx) => {
+          const before =
+            fields.sku === undefined
+              ? undefined
+              : await tx.product.findUniqueOrThrow({ where: { id }, select: { sku: true } });
+          const updated = await tx.product.update({
+            where: { id },
+            data: {
+              ...fields,
+              // Sent thresholds replace the product's whole set; absent leaves them alone.
+              ...(reorderThresholds && {
+                reorderThresholds: { deleteMany: {}, create: reorderThresholds },
+              }),
+            },
+            include: WITH_THRESHOLDS,
+          });
+          // Checked after the update, which holds the product's row lock: an order line being
+          // saved for this product at the same moment either shows up here or waits for us (MD-01).
+          if (before && fields.sku !== before.sku) {
+            const referenced = await tx.purchaseOrderLine.count({ where: { productId: id } });
+            if (referenced > 0) throw errors.CONFLICT({ data: skuLocked(before.sku) });
+          }
+          return updated;
         });
         return toProduct(row);
       } catch (error) {
