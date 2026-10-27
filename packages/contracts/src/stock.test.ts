@@ -64,7 +64,9 @@ describe('stock schemas', () => {
     expect(StockMovementSchema.safeParse(movement).success).toBe(true);
     expect(StockMovementSchema.safeParse({ ...movement, balanceAfter: -1 }).success).toBe(false);
     expect(StockMovementSchema.safeParse({ ...movement, quantityChange: 0 }).success).toBe(false);
-    expect(StockMovementSchema.safeParse({ ...movement, movementType: 'GIFT' }).success).toBe(false);
+    expect(StockMovementSchema.safeParse({ ...movement, movementType: 'GIFT' }).success).toBe(
+      false,
+    );
   });
 
   it('filters movements by product and store', () => {

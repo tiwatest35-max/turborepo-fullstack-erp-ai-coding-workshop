@@ -76,7 +76,9 @@ export async function createMigratedTemplate(): Promise<void> {
     shell: true,
   });
   if (result.status !== 0) {
-    throw new Error(`prisma migrate deploy failed for the test template:\n${result.stdout}\n${result.stderr}`);
+    throw new Error(
+      `prisma migrate deploy failed for the test template:\n${result.stdout}\n${result.stderr}`,
+    );
   }
 }
 

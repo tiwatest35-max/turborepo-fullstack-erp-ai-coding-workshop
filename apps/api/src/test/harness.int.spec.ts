@@ -6,11 +6,11 @@ describe('integration harness', () => {
   const db = useIntegrationDatabase();
 
   it('gives this worker its own migrated database', async () => {
-    const [{ current_database }] = await db.prisma.$queryRaw<{ current_database: string }[]>`
+    const rows = await db.prisma.$queryRaw<{ current_database: string }[]>`
       SELECT current_database()`;
 
-    expect(current_database).toBe(workerDatabaseName());
-    expect(current_database).not.toBe('erp');
+    expect(rows[0]?.current_database).toBe(workerDatabaseName());
+    expect(rows[0]?.current_database).not.toBe('erp');
   });
 
   it('loads the TOR 8.1 starting data: stores, supplier, products, users and thresholds', async () => {

@@ -69,7 +69,11 @@ describe('StockLedgerService (real Postgres)', () => {
       }),
     );
 
-    expect(movement).toMatchObject({ balanceBefore: 0, balanceAfter: 4, sourceDocumentNumber: null });
+    expect(movement).toMatchObject({
+      balanceBefore: 0,
+      balanceAfter: 4,
+      sourceDocumentNumber: null,
+    });
     expect(await quantityOf(created.id, storeId)).toBe(4);
   });
 
@@ -134,7 +138,9 @@ describe('StockLedgerService (real Postgres)', () => {
 
     expect(await quantityOf(productId, storeId)).toBe(10);
     expect(
-      await db.prisma.stockMovement.count({ where: { productId, storeId, movementType: 'RECEIPT' } }),
+      await db.prisma.stockMovement.count({
+        where: { productId, storeId, movementType: 'RECEIPT' },
+      }),
     ).toBe(0);
   });
 
@@ -186,7 +192,9 @@ describe('StockLedgerService (real Postgres)', () => {
 
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find((r) => r.status === 'rejected');
-    expect(rejected?.status === 'rejected' && rejected.reason).toBeInstanceOf(InsufficientStockError);
+    expect(rejected?.status === 'rejected' && rejected.reason).toBeInstanceOf(
+      InsufficientStockError,
+    );
     expect(await quantityOf(productId, storeId)).toBe(3);
   });
 

@@ -110,7 +110,9 @@ describe('StockController (real Postgres)', () => {
 
       const result = await search(manager, { search: 'SKU-FRESH' });
 
-      expect(result.items.map((i) => [i.storeCode, i.quantity, i.reorderThreshold, i.lowStock])).toEqual([
+      expect(
+        result.items.map((i) => [i.storeCode, i.quantity, i.reorderThreshold, i.lowStock]),
+      ).toEqual([
         ['B01', 0, null, false],
         ['B02', 0, null, false],
       ]);
@@ -170,7 +172,15 @@ describe('StockController (real Postgres)', () => {
 
       // B01 opens with 10 of SKU001 and 5 of SKU002. Zero balances have no movement.
       expect(
-        result.items.map((m) => [m.productSku, m.storeCode, m.quantityChange, m.balanceBefore, m.balanceAfter]).sort(),
+        result.items
+          .map((m) => [
+            m.productSku,
+            m.storeCode,
+            m.quantityChange,
+            m.balanceBefore,
+            m.balanceAfter,
+          ])
+          .sort(),
       ).toEqual([
         ['SKU001', 'B01', 10, 0, 10],
         ['SKU002', 'B01', 5, 0, 5],
@@ -204,7 +214,9 @@ describe('StockController (real Postgres)', () => {
       const forProduct = await movements(manager, { productId: sku001.id, storeId: b01.id });
       const otherStore = await movements(manager, { storeId: b02.id });
 
-      expect(forProduct.items.map((m) => [m.movementType, m.quantityChange, m.sourceDocumentNumber])).toEqual([
+      expect(
+        forProduct.items.map((m) => [m.movementType, m.quantityChange, m.sourceDocumentNumber]),
+      ).toEqual([
         ['RECEIPT', 8, 'GR-000001'],
         ['OPENING', 10, null],
       ]);
