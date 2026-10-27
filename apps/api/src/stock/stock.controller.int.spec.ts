@@ -73,8 +73,16 @@ describe('StockController (real Postgres)', () => {
       const manager = await db.userByEmail('manager01@erp.local');
       const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
 
-      const matching = await search(manager, { storeId: b01.id, lowStockOnly: true, search: 'detergent' });
-      const other = await search(manager, { storeId: b01.id, lowStockOnly: true, search: 'SKU001' });
+      const matching = await search(manager, {
+        storeId: b01.id,
+        lowStockOnly: true,
+        search: 'detergent',
+      });
+      const other = await search(manager, {
+        storeId: b01.id,
+        lowStockOnly: true,
+        search: 'SKU001',
+      });
 
       expect(matching.items.map((i) => [i.sku, i.quantity])).toEqual([['SKU003', 0]]);
       expect(other.items).toEqual([]);
@@ -84,7 +92,13 @@ describe('StockController (real Postgres)', () => {
     it('never calls a product without a reorder threshold low-stock', async () => {
       const manager = await db.userByEmail('manager01@erp.local');
       await db.prisma.product.create({
-        data: { sku: 'SKU-NOTHRESH', name: 'No threshold', category: 'x', unit: 'box', sellingPrice: 5 },
+        data: {
+          sku: 'SKU-NOTHRESH',
+          name: 'No threshold',
+          category: 'x',
+          unit: 'box',
+          sellingPrice: 5,
+        },
       });
 
       const result = await search(manager, { search: 'SKU-NOTHRESH', lowStockOnly: true });
