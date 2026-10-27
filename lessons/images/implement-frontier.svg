@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="940" viewBox="0 0 1200 940" role="img" aria-labelledby="title desc">
+<title id="title">The loop without the typing</title><desc id="desc">Top to bottom. First, you, at a terminal: one command, pnpm implement:frontier, started by a human; the guard refuses it to agents. Second, the script, a slate lane: query the frontier, the open tickets with no open blockers, capped at three; then for each ticket, reset the database, branch from main, run kiro-cli headless with the implementer agent and the saved prompt, report the pull request or that there is none, return to main, next ticket; an arrow loops back. Third, inside each run, an amber box: a fresh process, reads the prompt and the implement-ticket skill, seams from the ticket's Seams line, red-green TDD, pnpm check, commit, review against main, push, pull request with Closes. Fourth, GitHub: three branches, three pull requests, CI and the AI review on each. Fifth, you again, three times: reset by hand, the Demo line, the diff against the criteria, the boxes, and a colleague merges. A red strip says: never merges, never closes, never computes a frontier GitHub doesn't report. A note says: the script does what the guard refuses the agent; a human starts the script.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#64748b"/></marker>
+<style>text {font-family:Arial,Helvetica,sans-serif;fill:#172033} .title {font-size:30px;font-weight:700} .label {font-size:21px;font-weight:600} .body {font-size:20px;fill:#475569} .small {font-size:16px;fill:#475569} .code {font-family:Menlo,Consolas,monospace;font-size:15px;fill:#172033} .badge {font-size:16px;font-weight:700;fill:#ffffff} .arrow {fill:none;stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)} .who {font-size:15px;font-weight:700;letter-spacing:1px;fill:#475569} .red {font-size:17px;font-weight:700;fill:#ffffff}</style></defs>
+<rect width="1200" height="940" fill="white"/>
+<rect x="24" y="24" width="1152" height="892" rx="12" fill="#f8fafc" stroke="#dce3eb" stroke-width="2"/>
+<text x="600" y="72" class="title" text-anchor="middle">The loop without the typing</text>
+<text x="600" y="104" class="body" text-anchor="middle">One command. A script does the loop, a fresh process does each ticket, the human half happens three times.</text>
+
+<!-- Row 1: you -->
+<text x="60" y="148" class="who">YOU, ONCE</text>
+<rect x="60" y="158" width="1080" height="54" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<text x="80" y="192" class="code">pnpm implement:frontier</text>
+<text x="330" y="192" class="small">Started from your terminal, never by an agent: the guard's eighth rule refuses it to every agent.</text>
+<path d="M600 212 V240" class="arrow"/>
+
+<!-- Row 2: the script lane -->
+<text x="60" y="262" class="who">THE SCRIPT · scripts/implement-frontier.sh · one pass</text>
+<rect x="60" y="272" width="1080" height="150" rx="12" fill="#eef2f7" stroke="#64748b" stroke-width="2"/>
+
+<rect x="76" y="288" width="176" height="118" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<rect x="88" y="298" width="32" height="28" rx="6" fill="#64748b"/><text x="104" y="318" class="badge" text-anchor="middle">1</text>
+<text x="128" y="318" class="label">Frontier</text>
+<text x="88" y="346" class="small">Open sub-issues of</text><text x="88" y="366" class="small">the spec with zero</text><text x="88" y="386" class="small">blockers. Lowest 3.</text>
+<path d="M252 347 H276" class="arrow"/>
+
+<rect x="280" y="288" width="150" height="118" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<rect x="292" y="298" width="32" height="28" rx="6" fill="#64748b"/><text x="308" y="318" class="badge" text-anchor="middle">2</text>
+<text x="332" y="318" class="label">Reset</text>
+<text x="292" y="346" class="small">migrate reset,</text><text x="292" y="366" class="small">--force. The DB</text><text x="292" y="386" class="small">matches main again.</text>
+<path d="M430 347 H454" class="arrow"/>
+
+<rect x="458" y="288" width="150" height="118" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<rect x="470" y="298" width="32" height="28" rx="6" fill="#64748b"/><text x="486" y="318" class="badge" text-anchor="middle">3</text>
+<text x="510" y="318" class="label">Branch</text>
+<text x="470" y="346" class="small">From main.</text><text x="470" y="366" class="code">ticket/18-slug</text><text x="470" y="386" class="small">Exists? Skip it.</text>
+<path d="M608 347 H632" class="arrow"/>
+
+<rect x="636" y="288" width="262" height="118" rx="10" fill="#fff7ed" stroke="#d97706" stroke-width="2"/>
+<rect x="648" y="298" width="32" height="28" rx="6" fill="#d97706"/><text x="664" y="318" class="badge" text-anchor="middle">4</text>
+<text x="688" y="318" class="label">Run, headless</text>
+<text x="648" y="344" class="code">kiro-cli chat --v3</text><text x="648" y="364" class="code">  --no-interactive</text><text x="648" y="384" class="code">  --agent implementer</text>
+<text x="648" y="402" class="code">  /implement-unattended #18</text>
+<path d="M898 347 H922" class="arrow"/>
+
+<rect x="926" y="288" width="198" height="118" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<rect x="938" y="298" width="32" height="28" rx="6" fill="#64748b"/><text x="954" y="318" class="badge" text-anchor="middle">5</text>
+<text x="978" y="318" class="label">Report, main</text>
+<text x="938" y="346" class="small">PR URL, or "no PR, see</text><text x="938" y="366" class="small">.ai-runs/18.log". Back to</text><text x="938" y="386" class="small">main. Next: new process.</text>
+<path d="M1025 406 V414 H355 V408" class="arrow"/>
+
+<path d="M767 422 V450" class="arrow"/>
+
+<!-- Row 3: inside the run -->
+<text x="60" y="472" class="who">INSIDE ONE RUN · a fresh process, nothing from the last ticket</text>
+<rect x="60" y="482" width="1080" height="112" rx="12" fill="#fff7ed" stroke="#d97706" stroke-width="2"/>
+<text x="80" y="512" class="label">Prompt → skill</text>
+<text x="80" y="536" class="small">implement-unattended reads</text><text x="80" y="556" class="small">implement-ticket in full, then</text><text x="80" y="576" class="small">implement, tdd, code-review, pr.</text>
+<text x="340" y="512" class="label">Seams: stated, not asked</text>
+<text x="340" y="536" class="small">The ticket's Seams: line is the</text><text x="340" y="556" class="small">yes you gave in advance. An</text><text x="340" y="576" class="small">ambiguity stops the run instead.</text>
+<text x="620" y="512" class="label">Red, green, check, commit</text>
+<text x="620" y="536" class="small">One slice at a time. pnpm check</text><text x="620" y="556" class="small">and format before the last</text><text x="620" y="576" class="small">commit, #18 in every message.</text>
+<text x="900" y="512" class="label">Review, push, PR</text>
+<text x="900" y="536" class="small">code-review against main,</text><text x="900" y="556" class="small">fix, commit, push, PR with</text><text x="900" y="576" class="small">Closes #18. Never ticks a box.</text>
+<path d="M600 594 V622" class="arrow"/>
+
+<!-- Row 4: GitHub -->
+<text x="60" y="644" class="who">GITHUB · your fork</text>
+<rect x="60" y="654" width="1080" height="84" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="80" y="668" width="330" height="56" rx="8" fill="#f1f5f9" stroke="#b6c0cc"/>
+<text x="94" y="692" class="code">ticket/18-… → PR  Closes #18</text><text x="94" y="714" class="small">CI ✓   AI review posted, nobody asked</text>
+<rect x="435" y="668" width="330" height="56" rx="8" fill="#f1f5f9" stroke="#b6c0cc"/>
+<text x="449" y="692" class="code">ticket/19-… → PR  Closes #19</text><text x="449" y="714" class="small">CI ✓   AI review posted, nobody asked</text>
+<rect x="790" y="668" width="330" height="56" rx="8" fill="#f1f5f9" stroke="#b6c0cc"/>
+<text x="804" y="692" class="code">ticket/20-… → PR  Closes #20</text><text x="804" y="714" class="small">CI ✓   AI review. Conflicts once #18 merges</text>
+<path d="M600 738 V764" class="arrow"/>
+
+<!-- Row 5: you, three times -->
+<text x="60" y="786" class="who">YOU, THREE TIMES · lesson 7 section 5, per pull request</text>
+<rect x="60" y="796" width="1080" height="62" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<text x="80" y="821" class="small">Switch to the branch · reset the database by hand · the Demo: line · the diff against the criteria · tick the boxes</text>
+<text x="80" y="845" class="small">Wait for CI and read the AI review · a colleague who isn't the author merges · the frontier moves, and the next pass builds it</text>
+
+<!-- Red strip and note -->
+<rect x="60" y="870" width="1080" height="28" rx="6" fill="#b91c1c"/>
+<text x="600" y="890" class="red" text-anchor="middle">Never merges · never closes a ticket · never computes a frontier GitHub doesn't report · never retries</text>
+<text x="600" y="912" class="small" text-anchor="middle" font-style="italic">The script does what the guard refuses the agent. A human starts the script, and the guard's eighth rule keeps it that way.</text>
+</svg>

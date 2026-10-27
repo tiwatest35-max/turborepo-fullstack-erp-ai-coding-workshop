@@ -31,6 +31,9 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      # The model is pinned in .kiro/agents/reviewer.json. The effort is the one
+      # knob the agent file can't hold, so it lives here and goes into the footer.
+      EFFORT: high
     steps:
       - uses: actions/checkout@v5
         with:
@@ -60,19 +63,36 @@ jobs:
             exit 0
           fi
           mkdir -p .ai-review
-          kiro-cli chat --v3 --no-interactive --agent reviewer "Review pull request #${PR_NUMBER}."
+          kiro-cli chat --v3 --no-interactive --agent reviewer --effort "$EFFORT" "Review pull request #${PR_NUMBER}."
 
       # Posting is the job's step, not the agent's. The agent can only write the
       # file. This is the one line that decides the review state, and it says
-      # --comment. If the agent wrote nothing, say so on the PR instead of staying silent.
+      # --comment. Before posting, the job checks the file has the shape the
+      # review-pr skill asks for, so a half-formed review never reaches the PR,
+      # and appends a footer saying which model and commit produced it.
       - name: Post the review
         if: steps.review.outputs.skipped != 'true'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ ! -s .ai-review/review.md ]; then
-            echo "::warning::The reviewer did not write .ai-review/review.md; see the step above."
-            gh pr comment "$PR_NUMBER" --body "The AI review did not produce a review on this run. See the [run log](${RUN_URL})."
+          FILE=.ai-review/review.md
+          reject() {
+            echo "::warning::$1"
+            [ -s "$FILE" ] && cat "$FILE"
+            gh pr comment "$PR_NUMBER" --body "The AI review did not produce a usable review on this run: $1. See the [run log](${RUN_URL})."
             exit 0
+          }
+          [ -s "$FILE" ] || reject "the reviewer did not write .ai-review/review.md"
+          grep -q '<!-- ai-review -->' "$FILE" || reject "the review has no ai-review marker"
+          [ "$(grep -c '^\*\*Verdict for the human reviewer:\*\*' "$FILE")" = 1 ] || reject "the review does not have exactly one verdict line"
+          grep -Eq '^\*\*Verdict for the human reviewer:\*\* `(Looks mergeable after the demo|Read the findings first|Do not merge yet)`' "$FILE" || reject "the verdict is not one of the three allowed values"
+          for heading in Criteria Findings Evidence 'Merge danger' 'Questions for the author'; do
+            grep -q "^### $heading\$" "$FILE" || reject "the review is missing the $heading section"
+          done
+          if grep -q '\*\*Blocker\*\*' "$FILE" && ! grep -q '`Do not merge yet`' "$FILE"; then
+            reject "the review has a Blocker but the verdict is not Do not merge yet"
           fi
-          gh pr review "$PR_NUMBER" --comment --body-file .ai-review/review.md
+          MODEL=$(node -p "require('./.kiro/agents/reviewer.json').model")
+          HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid)
+          printf '\n---\n\nModel `%s`, effort `%s`, reviewed commit `%s`, [run log](%s).\n' "$MODEL" "$EFFORT" "$HEAD_SHA" "$RUN_URL" >> "$FILE"
+          gh pr review "$PR_NUMBER" --comment --body-file "$FILE"

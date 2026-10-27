@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+<title id="title">How MCP works: host, client, server, and the four steps of a session</title><desc id="desc">Three parts left to right. The host, kiro-cli running the planner agent, contains the model with its context window and an MCP client, one per server. The server, mcp.atlassian.com, is remote over HTTP, offers 258 tools with tools equals all, and runs as the account you authorised; behind it sits your Jira site. Four numbered arrows between client and server. One, initialize, once per session, with OAuth in the browser the first time. Two, tools slash list, and back come 258 definitions, each a name, a description and an input schema, which the host writes into the context window before your first prompt. Three, tools slash call with a name and JSON arguments, sent only after the host checks its allow-list and you say yes. Four, the result, content plus an isError flag, goes into the context like shell output. A note says steps one and two are paid once per session whether or not a tool is ever called, and steps three and four repeat per call.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#64748b"/></marker>
+<marker id="arrow-amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#c08a1d"/></marker>
+<style>text {font-family:Arial,Helvetica,sans-serif;fill:#172033} .title {font-size:30px;font-weight:700} .label {font-size:21px;font-weight:600} .body {font-size:20px;fill:#475569} .small {font-size:17px;fill:#475569} .tiny {font-size:15px;fill:#475569} .code {font-family:Menlo,Consolas,monospace;font-size:15px;fill:#172033} .step {font-size:15px;font-weight:700;fill:#ffffff} .arrow {fill:none;stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)} .arrow-amber {fill:none;stroke:#c08a1d;stroke-width:2.5;marker-end:url(#arrow-amber)} .dashed {stroke-dasharray:6 5} .who {font-size:15px;font-weight:700;letter-spacing:1px;fill:#64748b}</style></defs>
+<rect width="1200" height="800" fill="white"/>
+<rect x="24" y="24" width="1152" height="752" rx="12" fill="#f8fafc" stroke="#dce3eb" stroke-width="2"/>
+<text x="600" y="76" class="title" text-anchor="middle">How MCP works</text>
+<text x="600" y="110" class="body" text-anchor="middle">A server is a tool list. The host decides which of it the model sees, and asks before each call.</text>
+
+<!-- host -->
+<rect x="60" y="150" width="420" height="470" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<text x="80" y="180" class="who">HOST</text>
+<text x="80" y="206" class="code">kiro-cli chat --agent planner</text>
+
+<!-- model + context -->
+<rect x="80" y="226" width="190" height="370" rx="12" fill="#fff4d6" stroke="#c08a1d" stroke-width="2"/>
+<text x="175" y="258" class="label" text-anchor="middle">Model</text>
+<text x="175" y="282" class="small" text-anchor="middle">and its context window</text>
+<rect x="94" y="300" width="162" height="34" rx="6" fill="#ffffff" stroke="#c08a1d" stroke-width="1.5"/>
+<text x="175" y="323" class="tiny" text-anchor="middle">system prompt</text>
+<rect x="94" y="340" width="162" height="34" rx="6" fill="#ffffff" stroke="#c08a1d" stroke-width="1.5"/>
+<text x="175" y="363" class="tiny" text-anchor="middle">AGENTS.md, skills</text>
+<rect x="94" y="380" width="162" height="76" rx="6" fill="#c08a1d" stroke="#c08a1d" stroke-width="1.5"/>
+<text x="175" y="406" class="tiny" text-anchor="middle" fill="#ffffff" font-weight="700">tool definitions</text>
+<text x="175" y="427" class="tiny" text-anchor="middle" fill="#ffffff">built-in, plus what</text>
+<text x="175" y="446" class="tiny" text-anchor="middle" fill="#ffffff">the server listed</text>
+<rect x="94" y="462" width="162" height="34" rx="6" fill="#ffffff" stroke="#c08a1d" stroke-width="1.5"/>
+<text x="175" y="485" class="tiny" text-anchor="middle">the conversation</text>
+<text x="175" y="530" class="small" text-anchor="middle">picks a tool and</text>
+<text x="175" y="552" class="small" text-anchor="middle">writes its arguments.</text>
+<text x="175" y="574" class="small" text-anchor="middle">Reads what comes back.</text>
+
+<!-- client -->
+<rect x="286" y="226" width="180" height="370" rx="12" fill="#eef2f7" stroke="#94a3b8" stroke-width="2"/>
+<text x="376" y="258" class="label" text-anchor="middle">MCP client</text>
+<text x="376" y="282" class="small" text-anchor="middle">one per server</text>
+<text x="376" y="318" class="small" text-anchor="middle">the host's code,</text>
+<text x="376" y="340" class="small" text-anchor="middle">not the server's</text>
+<text x="376" y="374" class="small" text-anchor="middle">speaks JSON-RPC</text>
+<text x="376" y="396" class="small" text-anchor="middle">over HTTP or a pipe</text>
+<rect x="298" y="416" width="156" height="98" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="376" y="440" class="tiny" text-anchor="middle" font-weight="700">the control</text>
+<text x="376" y="462" class="tiny" text-anchor="middle">shows the model</text>
+<text x="376" y="482" class="tiny" text-anchor="middle">only the tools</text>
+<text x="376" y="502" class="tiny" text-anchor="middle">on the allow-list</text>
+<text x="376" y="548" class="small" text-anchor="middle">asks you before</text>
+<text x="376" y="570" class="small" text-anchor="middle">every call</text>
+
+<!-- model <-> client -->
+<path d="M270 330 H282" class="arrow-amber"/>
+<path d="M286 560 H274" class="arrow"/>
+
+<!-- server -->
+<rect x="790" y="150" width="270" height="470" rx="12" fill="#eef2f7" stroke="#94a3b8" stroke-width="2"/>
+<text x="810" y="180" class="who">SERVER</text>
+<text x="810" y="206" class="code">mcp.atlassian.com/v2/mcp</text>
+<text x="810" y="246" class="label">Remote, over HTTP</text>
+<text x="810" y="274" class="small">Runs on Atlassian's machines,</text>
+<text x="810" y="296" class="small">not yours. Can't see your files.</text>
+<text x="810" y="334" class="label">Offers tools</text>
+<text x="810" y="362" class="small">258 with ?tools=all. Each one</text>
+<text x="810" y="384" class="small">is a name, a description written</text>
+<text x="810" y="406" class="small">for the model, and a JSON</text>
+<text x="810" y="428" class="small">Schema for its arguments.</text>
+<text x="810" y="466" class="label">Acts as you</text>
+<text x="810" y="494" class="small">Whatever the account you</text>
+<text x="810" y="516" class="small">authorised may do on the site,</text>
+<text x="810" y="538" class="small">the server may do. No more,</text>
+<text x="810" y="560" class="small">no less.</text>
+
+<!-- jira -->
+<rect x="1080" y="320" width="76" height="130" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+<text x="1118" y="366" class="label" text-anchor="middle">Jira</text>
+<text x="1118" y="392" class="tiny" text-anchor="middle">your site</text>
+<text x="1118" y="412" class="tiny" text-anchor="middle">REST API</text>
+<path d="M1060 385 H1076" class="arrow"/>
+
+<!-- step arrows between client (x=480) and server (x=790): 310px gap, centre 635 -->
+<!-- 1 initialize -->
+<circle cx="500" cy="246" r="12" fill="#64748b"/><text x="500" y="251" class="step" text-anchor="middle">1</text>
+<path d="M518 246 H786" class="arrow dashed"/>
+<text x="652" y="238" class="code" text-anchor="middle">initialize</text>
+<text x="652" y="268" class="tiny" text-anchor="middle">OAuth in the browser, once</text>
+
+<!-- 2 tools/list -->
+<circle cx="500" cy="316" r="12" fill="#64748b"/><text x="500" y="321" class="step" text-anchor="middle">2</text>
+<path d="M518 316 H786" class="arrow"/>
+<text x="652" y="308" class="code" text-anchor="middle">tools/list</text>
+<path d="M786 350 H518" class="arrow-amber"/>
+<text x="652" y="342" class="code" text-anchor="middle" fill="#c08a1d">258 definitions</text>
+<text x="652" y="372" class="code" text-anchor="middle" fill="#c08a1d" font-size="14">{name, description, inputSchema}</text>
+
+<!-- 3 tools/call -->
+<circle cx="500" cy="436" r="12" fill="#64748b"/><text x="500" y="441" class="step" text-anchor="middle">3</text>
+<path d="M518 436 H786" class="arrow"/>
+<text x="652" y="428" class="code" text-anchor="middle">tools/call {name, arguments}</text>
+<text x="652" y="458" class="tiny" text-anchor="middle">only after the allow-list and your yes</text>
+
+<!-- 4 result -->
+<circle cx="500" cy="560" r="12" fill="#64748b"/><text x="500" y="565" class="step" text-anchor="middle">4</text>
+<path d="M786 560 H518" class="arrow"/>
+<text x="652" y="552" class="code" text-anchor="middle">result {content, isError}</text>
+<text x="652" y="582" class="tiny" text-anchor="middle">into the context, like shell output</text>
+
+<!-- note -->
+<rect x="60" y="650" width="1096" height="100" rx="12" fill="#ffffff" stroke="#dce3eb" stroke-width="2"/>
+<text x="84" y="686" class="who" fill="#c08a1d">ONCE</text><text x="150" y="686" class="small">Steps 1 and 2 run before your first prompt. Every definition the server lists is paid for, in every session, called or not.</text>
+<text x="84" y="722" class="who">PER CALL</text><text x="180" y="722" class="small">Steps 3 and 4 repeat each time the model picks a tool. The host shows you the arguments and sends nothing until you say yes.</text>
+</svg>

@@ -1,0 +1,7 @@
+{
+  "extends": "@erp/typescript-config/library.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["tests", "playwright.config.ts"]
+}

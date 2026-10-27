@@ -13,7 +13,7 @@ Everything runs on Vitest. Tests are colocated with the code they cover.
 | `apps/web`           | `*.test.tsx`  | `pnpm turbo run test --filter=@erp/web`   |
 | `packages/contracts` | `*.test.ts`   | `pnpm turbo run test --filter=@erp/contracts` |
 
-`pnpm test` runs all of them. Inside Docker prefix with `docker compose exec api`.
+`pnpm test` runs all of them. Inside Docker prefix with `docker compose exec api`. Browser tests are not here: they live in `apps/e2e` and have their own skill, `write-e2e`.
 
 ## API controller spec
 

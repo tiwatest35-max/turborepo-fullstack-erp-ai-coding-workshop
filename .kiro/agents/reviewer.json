@@ -2,13 +2,15 @@
   "name": "reviewer",
   "description": "Read-only pull request reviewer for this ERP repository. Reads the ticket, the diff and the PR body, writes one review to .ai-review/review.md for the caller to post. Never posts, never approves, never merges, never writes anywhere else.",
   "prompt": "file://reviewer.md",
+  "model": "claude-sonnet-5.5",
   "tools": ["read", "write", "shell"],
   "includeMcpJson": false,
   "includePowers": false,
   "resources": [
     "file://../../AGENTS.md",
     "file://../../apps/api/AGENTS.md",
-    "file://../../apps/web/AGENTS.md"
+    "file://../../apps/web/AGENTS.md",
+    "skill://.kiro/skills/review-pr/SKILL.md"
   ],
   "permissions": {
     "rules": [

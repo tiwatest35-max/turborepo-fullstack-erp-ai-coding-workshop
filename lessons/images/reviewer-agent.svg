@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1100" viewBox="0 0 1200 1100" role="img" aria-labelledby="title desc">
+<title id="title">The reviewer agent file, field by field</title><desc id="desc">Five rows, each pairing a field of reviewer.json on the left with what it means on the right. First, prompt: file://reviewer.md. The brief is a file, Markdown next to the agent, diffable, and its first instruction is to read the skill in full. Second, model: claude-sonnet-5.5. The model is pinned so the laptop and the runner run the same one instead of auto; Sonnet 5.5 costs 1.3x credits and Opus 5.5 2.0x; effort is not a field, so --effort high goes on the command and the footer records both. Third, resources: three AGENTS.md files and skill://.kiro/skills/review-pr/SKILL.md. A skill resource puts the name in front of the model, not the text; the brief opens the file; no tdd, implement, pr or code-review. Fourth, an amber row, permissions.rules, as a table with allow and deny columns: fs_read allows the whole checkout; fs_write allows only .ai-review and denies everything else with that directory excluded; shell allows gh pr view, diff and checks, gh issue view, git log and mkdir, and denies gh pr merge, review, comment and close, gh issue close, gh api, git push and commit. Two notes: deny beats allow, so the exclude line keeps the output directory writable; and .ai-review is inside the checkout because a write outside the workspace is an ask. A red strip says: headless, every ask is a deny; never --trust-all-tools. Fifth, hooks: agent-guard, the same guard as lesson 5; the rules are Kiro's, the guard is ours and runs in Claude Code and Codex too. A banner at the bottom says: V3 only. Rules and skill resources are V3 fields; every command passes --v3; on V2 the agent is not found.</desc>
+<defs><style>text {font-family:Arial,Helvetica,sans-serif;fill:#172033} .title {font-size:30px;font-weight:700} .label {font-size:21px;font-weight:600} .body {font-size:20px;fill:#475569} .small {font-size:17px;fill:#475569} .tiny {font-size:14px;fill:#475569} .code {font-family:Menlo,Consolas,monospace;font-size:15px;fill:#172033} .code14 {font-family:Menlo,Consolas,monospace;font-size:14px;fill:#172033} .badge {font-size:16px;font-weight:700;fill:#ffffff} .who {font-size:15px;font-weight:700;letter-spacing:1px} .no {font-size:16px;font-weight:700;fill:#b42318} .ok {font-size:14px;font-weight:700;fill:#1f7a5c} .deny {font-size:14px;font-weight:700;fill:#b42318}</style></defs>
+<rect width="1200" height="1100" fill="white"/>
+<rect x="24" y="24" width="1152" height="1052" rx="12" fill="#f8fafc" stroke="#dce3eb" stroke-width="2"/>
+<text x="600" y="78" class="title" text-anchor="middle">The reviewer agent file, field by field</text>
+<text x="600" y="114" class="body" text-anchor="middle">Left, the field in reviewer.json. Right, what it decides. The amber row is the one that makes the agent read-only.</text>
+
+<!-- 1 prompt -->
+<rect x="60" y="146" width="1080" height="96" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="160" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="184" class="badge" text-anchor="middle">1</text>
+<rect x="128" y="158" width="372" height="68" rx="8" fill="#f1f5f9" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="144" y="198" class="code">"prompt": "file://reviewer.md"</text>
+<text x="524" y="185" class="label">The brief is a file</text>
+<text x="524" y="211" class="small">Markdown next to the agent, diffable. First instruction: read the skill in full.</text>
+<text x="524" y="231" class="small">A string escaped inside JSON can't be reviewed. Section 4 reads the brief.</text>
+
+<!-- 2 model -->
+<rect x="60" y="254" width="1080" height="118" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="268" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="292" class="badge" text-anchor="middle">2</text>
+<rect x="128" y="266" width="372" height="68" rx="8" fill="#f1f5f9" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="144" y="306" class="code">"model": "claude-sonnet-5.5"</text>
+<text x="524" y="293" class="label">The model is pinned</text>
+<text x="524" y="319" class="small">Same model on laptop and runner, not auto. Sonnet 1.3x credits, Opus 2x.</text>
+<text x="524" y="339" class="small">Effort is not a field: --effort high goes on the command. The footer records both.</text>
+<text x="524" y="359" class="small">If the account can't use the pin, headless Kiro warns and runs the default.</text>
+
+<!-- 3 resources -->
+<rect x="60" y="384" width="1080" height="130" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="398" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="422" class="badge" text-anchor="middle">3</text>
+<rect x="128" y="396" width="386" height="104" rx="8" fill="#f1f5f9" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="144" y="420" class="code14">"resources": [</text>
+<text x="144" y="442" class="code14" xml:space="preserve">  "file://../../AGENTS.md",  (+ api, web)</text>
+<text x="144" y="464" class="code14" xml:space="preserve">  "skill://.kiro/skills/review-pr/SKILL.md"</text>
+<text x="144" y="486" class="code14">]</text>
+<text x="530" y="423" class="label">Three rule files and one skill</text>
+<text x="530" y="449" class="small">skill:// puts the name in front of the model, not the text. The brief opens the file.</text>
+<text x="530" y="469" class="small">Not tdd, implement or pr, and not code-review: it spawns sub-agents,</text>
+<text x="530" y="489" class="small">and headless Kiro doesn't promise those. The reviewer has its own skill.</text>
+
+<!-- 4 permissions -->
+<rect x="60" y="526" width="1080" height="372" rx="12" fill="#fff4d6" stroke="#c08a1d" stroke-width="2"/>
+<rect x="76" y="540" width="40" height="36" rx="8" fill="#c08a1d"/><text x="96" y="564" class="badge" text-anchor="middle">4</text>
+<text x="128" y="565" class="label">"permissions": { "rules": [ ... ] }   makes it read-only</text>
+<rect x="76" y="584" width="1048" height="178" rx="8" fill="#ffffff" stroke="#c08a1d" stroke-width="1.5"/>
+<text x="92" y="610" class="who" fill="#c08a1d">CAPABILITY</text>
+<text x="240" y="610" class="who" fill="#1f7a5c">ALLOW</text>
+<text x="690" y="610" class="who" fill="#b42318">DENY</text>
+<line x1="92" y1="620" x2="1108" y2="620" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="92" y="646" class="code14">fs_read</text>
+<text x="240" y="646" class="tiny">./**   the whole checkout</text>
+<text x="690" y="646" class="tiny">nothing</text>
+<text x="92" y="676" class="code14">fs_write</text>
+<text x="240" y="676" class="tiny">.ai-review/**   one output directory</text>
+<text x="690" y="676" class="tiny">./** with "exclude": [".ai-review/**"]</text>
+<text x="92" y="712" class="code14">shell</text>
+<text x="240" y="712" class="tiny">gh pr view, gh pr diff, gh pr checks, gh issue view,</text>
+<text x="240" y="732" class="tiny">git log and a few read-only git, mkdir -p .ai-review</text>
+<text x="690" y="712" class="tiny">gh pr merge, review, comment, close; gh issue close;</text>
+<text x="690" y="732" class="tiny">gh api; git push, commit, and the rest</text>
+<text x="76" y="790" class="small">deny beats allow, so the exclude line is what keeps the output directory writable.</text>
+<text x="76" y="812" class="small">.ai-review/ is inside the checkout: a write outside the workspace is an ask, whatever the rules say.</text>
+<rect x="76" y="830" width="1048" height="52" rx="8" fill="#fde8e6" stroke="#b42318" stroke-width="1.5"/>
+<text x="600" y="853" class="no" text-anchor="middle">Headless: every ask is a deny. Anything not allowed is refused.</text>
+<text x="600" y="873" class="no" text-anchor="middle">Never --trust-all-tools: it turns every ask into an allow.</text>
+
+<!-- 5 hooks -->
+<rect x="60" y="910" width="1080" height="96" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="924" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="948" class="badge" text-anchor="middle">5</text>
+<rect x="128" y="922" width="372" height="68" rx="8" fill="#f1f5f9" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="144" y="950" class="code14">"hooks": [{ "name": "agent-guard", ...</text>
+<text x="144" y="972" class="code14" xml:space="preserve">  "command": "node scripts/agent-guard.mjs"</text>
+<text x="524" y="949" class="label">The same hook as lesson 5</text>
+<text x="524" y="975" class="small">The rules are Kiro's. The guard is ours, and runs in Claude Code and Codex too.</text>
+<text x="524" y="995" class="small">They overlap on purpose.</text>
+
+<!-- V3 banner -->
+<rect x="60" y="1022" width="1080" height="40" rx="12" fill="#ffffff" stroke="#dce3eb" stroke-width="2"/>
+<text x="80" y="1048" class="who" fill="#64748b">V3 ONLY</text><text x="170" y="1048" class="small">Rules and skill:// are V3 fields. Every command passes --v3. On V2: Mode 'reviewer' not found.</text>
+</svg>

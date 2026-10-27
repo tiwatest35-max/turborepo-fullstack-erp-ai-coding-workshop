@@ -1,0 +1,37 @@
+{
+  "name": "planner",
+  "description": "Planning agent for this ERP repository: the erp agent plus one MCP server, Atlassian's, with only the Jira tools docs/agents/issue-tracker-jira.md names. For grill-me, to-spec and to-tickets in lesson 11. Never used to implement.",
+  "mcpServers": {
+    "atlassian": {
+      "type": "http",
+      "url": "https://mcp.atlassian.com/v2/mcp?tools=all"
+    }
+  },
+  "tools": [
+    "@builtin",
+    "@atlassian/getAccessibleAtlassianResources",
+    "@atlassian/listJiraProjects",
+    "@atlassian/getJiraIssueTypeMetaWithFields",
+    "@atlassian/createJiraIssue",
+    "@atlassian/getJiraIssue",
+    "@atlassian/editJiraIssue",
+    "@atlassian/searchJiraIssuesUsingJql",
+    "@atlassian/listJiraIssueLinkTypes",
+    "@atlassian/createJiraIssueLink",
+    "@atlassian/addOrEditJiraIssueComment",
+    "@atlassian/listJiraIssueTransitions",
+    "@atlassian/transitionJiraIssue"
+  ],
+  "excludedTools": ["knowledge"],
+  "includeMcpJson": false,
+  "includePowers": false,
+  "resources": ["skill://.kiro/skills/*/SKILL.md"],
+  "hooks": [
+    {
+      "name": "agent-guard",
+      "trigger": "PreToolUse",
+      "matcher": "^(execute_bash|execute_pwsh)$",
+      "action": { "type": "command", "command": "node scripts/agent-guard.mjs" }
+    }
+  ]
+}

@@ -76,7 +76,7 @@ It needs a harness that runs subagents in the background with worktree isolation
 
 **A shell loop** is the simpler version: call the agent non-interactively once per frontier ticket, `claude -p "/implement-ticket #16"` in Claude Code, `codex exec` in Codex, `kiro-cli chat --no-interactive --trust-all-tools "..."` in Kiro, with the seams pre-agreed in the prompt because nobody is there to answer. Matt Pocock's page notes that for truly unattended work a deterministic script or CI job is faster and cheaper than an orchestrating agent. Kiro's documentation doesn't confirm that a skill slash command expands in headless mode, so on Kiro the prompt would carry the skill's text.
 
-Both remove the human from the demo-diff-boxes step. The guard from lesson 5 still runs in every subagent and still blocks the same commands, but a hook can stop a command, not judge a diff. Know they exist, and leave them until you have run the loop by hand enough times to know what a bad ticket looks like.
+Both remove the human from the demo-diff-boxes step. The guard from lesson 5 still runs in every subagent and still blocks the same commands, but a hook can stop a command, not judge a diff. Know they exist, and leave them until you have run the loop by hand enough times to know what a bad ticket looks like. Lesson 9 builds the shell loop, on Kiro, with a human still proving every ticket; `implement-spec` is its Appendix A.
 
 ---
 

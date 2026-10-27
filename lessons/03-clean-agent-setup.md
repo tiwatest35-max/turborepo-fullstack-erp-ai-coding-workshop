@@ -184,6 +184,7 @@ Kiro has no single project file of off-switches. Its lever is a **custom agent**
 
 - `"tools": ["@builtin"]` gives the agent Kiro's built-in tools and no MCP tools.
 - `includeMcpJson` and `includePowers` set to `false` keep your MCP servers and installed powers out.
+- This lock is not forever. Lesson 11 opens exactly one server, for one new agent, with the tools listed by name, and leaves `erp` as it is here.
 - `excludedTools` removes the knowledge-base tool, which stores content between sessions.
 - The `skill://` line is needed because custom agents don't load skills unless you list them. The steering files and `AGENTS.md` still load as usual.
 

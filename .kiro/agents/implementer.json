@@ -1,0 +1,52 @@
+{
+  "name": "implementer",
+  "description": "Headless implementer for one ticket in this ERP repository. Follows the implement-ticket skill with the seams taken from the ticket, commits, pushes and opens a pull request. Never merges, never closes or edits a ticket, never edits the agent, prompt, guard, skill or workflow files it runs under.",
+  "prompt": "file://implementer.md",
+  "model": "claude-sonnet-5.5",
+  "tools": ["@builtin"],
+  "excludedTools": ["knowledge"],
+  "includeMcpJson": false,
+  "includePowers": false,
+  "resources": [
+    "file://../../AGENTS.md",
+    "file://../../apps/api/AGENTS.md",
+    "file://../../apps/web/AGENTS.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ],
+  "permissions": {
+    "rules": [
+      { "capability": "fs_read", "match": ["./**"], "effect": "allow" },
+      { "capability": "fs_write", "match": ["./**"], "effect": "allow" },
+      {
+        "capability": "fs_write",
+        "match": [".agents/**", ".claude/**", ".kiro/**", ".github/**", "scripts/**"],
+        "effect": "deny"
+      },
+      { "capability": "shell", "match": ["*"], "effect": "allow" },
+      {
+        "capability": "shell",
+        "match": [
+          "gh pr merge *",
+          "gh pr review *",
+          "gh pr close *",
+          "gh pr edit *",
+          "gh pr comment *",
+          "gh issue close *",
+          "gh issue edit *",
+          "gh issue comment *",
+          "gh api *",
+          "kiro-cli *"
+        ],
+        "effect": "deny"
+      }
+    ]
+  },
+  "hooks": [
+    {
+      "name": "agent-guard",
+      "trigger": "PreToolUse",
+      "matcher": "^(execute_bash|execute_pwsh)$",
+      "action": { "type": "command", "command": "node scripts/agent-guard.mjs" }
+    }
+  ]
+}

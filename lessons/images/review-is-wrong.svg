@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="990" viewBox="0 0 1200 990" role="img" aria-labelledby="title desc">
+<title id="title">When the review is wrong, the fix is rarely in the code it reviewed</title><desc id="desc">Five rows, each naming the place the fix lives, the symptom you see in the review, and what to do. Row one, the ticket or the PR body: a not found on a criterion that is plainly covered means the ticket's wording or Seams line is off, fix the ticket; a first finding of No Closes reference found means the PR body lacks Closes number, add it. Row two, amber, the skill file review-pr SKILL.md: a file and line that does not say what the review claims means add quote the line to the Criteria check; a rule AGENTS.md does not contain means the Standards check must name the rules; a Blocker with the wrong verdict or verdicts that differ between runs means the Severity table is ambiguous, add the case on one side. Row three, amber, the agent file reviewer.json: a refused command in the review text means add one narrow glob to the allow list, never trust all tools; a comment saying the run produced no review means open the run log, usually a refused command retried or a write to the wrong path. Row four, the secret: the step logs KIRO API KEY is not set and exits zero, set the secret in your fork, or review a colleague's PR locally with section five. Row five, red, the workflow ai-review.yml: the review approved or requested changes, stop, git log the workflow file, put the comment flag back before another run. A green strip at the bottom says: first, every time, check the row yourself and rerun once with gh workflow run; edit a file above only when it repeats; the reviewed code is the last place to look.</desc>
+<defs><style>text {font-family:Arial,Helvetica,sans-serif;fill:#172033} .title {font-size:30px;font-weight:700} .label {font-size:21px;font-weight:600} .body {font-size:20px;fill:#475569} .small {font-size:17px;fill:#475569} .code {font-family:Menlo,Consolas,monospace;font-size:15px;fill:#172033} .badge {font-size:16px;font-weight:700;fill:#ffffff} .who {font-size:15px;font-weight:700;letter-spacing:1px} .no {font-size:17px;font-weight:700;fill:#b42318}</style></defs>
+<rect width="1200" height="990" fill="white"/>
+<rect x="24" y="24" width="1152" height="942" rx="12" fill="#f8fafc" stroke="#dce3eb" stroke-width="2"/>
+<text x="600" y="78" class="title" text-anchor="middle">When the review is wrong, the fix is rarely in the code it reviewed</text>
+<text x="600" y="114" class="body" text-anchor="middle">Ten things that come up, sorted by the file that owns the fix. Find the row, then edit that file and nothing else.</text>
+
+<!-- column headers -->
+<text x="76" y="160" class="who" fill="#64748b">WHERE THE FIX LIVES</text>
+<text x="350" y="160" class="who" fill="#64748b">WHAT YOU SEE</text>
+<text x="750" y="160" class="who" fill="#64748b">WHAT TO DO</text>
+
+<!-- 1 ticket or PR body -->
+<rect x="60" y="176" width="1080" height="120" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="190" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="214" class="badge" text-anchor="middle">1</text>
+<text x="128" y="215" class="label">Ticket or PR body</text>
+<text x="76" y="250" class="code">Seams:  /  Closes #T</text>
+<text x="350" y="216" class="small">not found on a criterion that is covered</text>
+<text x="350" y="264" class="small">"No Closes reference found" as the first finding</text>
+<text x="750" y="216" class="small">The Seams line or the wording is off.</text>
+<text x="750" y="238" class="small">Fix the ticket, as lesson 7 section 7 says.</text>
+<text x="750" y="264" class="small">Add Closes #T to the PR body. Nothing else.</text>
+
+<!-- 2 the skill -->
+<rect x="60" y="310" width="1080" height="160" rx="12" fill="#fff4d6" stroke="#c08a1d" stroke-width="2"/>
+<rect x="76" y="324" width="40" height="36" rx="8" fill="#c08a1d"/><text x="96" y="348" class="badge" text-anchor="middle">2</text>
+<text x="128" y="349" class="label">The skill</text>
+<text x="76" y="384" class="code">review-pr/SKILL.md</text>
+<text x="350" y="350" class="small">A file:line that doesn't say what it claims</text>
+<text x="350" y="386" class="small">A finding citing a rule AGENTS.md doesn't have</text>
+<text x="350" y="422" class="small">A Blocker with the wrong verdict, or two runs</text>
+<text x="350" y="444" class="small">on the same commit with different verdicts</text>
+<text x="750" y="350" class="small">Criteria check: add "quote the line".</text>
+<text x="750" y="386" class="small">Standards check: name the rules. No opinion.</text>
+<text x="750" y="422" class="small">Severity table: add the case, on one side.</text>
+<text x="750" y="444" class="small">The verdict is only as stable as the table.</text>
+
+<!-- 3 the agent file -->
+<rect x="60" y="484" width="1080" height="140" rx="12" fill="#fff4d6" stroke="#c08a1d" stroke-width="2"/>
+<rect x="76" y="498" width="40" height="36" rx="8" fill="#c08a1d"/><text x="96" y="522" class="badge" text-anchor="middle">3</text>
+<text x="128" y="523" class="label">The agent file</text>
+<text x="76" y="558" class="code">.kiro/agents/reviewer.json</text>
+<text x="350" y="524" class="small">A refused command in the review text</text>
+<text x="350" y="572" class="small">A comment: the run produced no review</text>
+<text x="750" y="524" class="small">Add one narrow glob to the allow list.</text>
+<text x="750" y="548" class="no">Never --trust-all-tools.</text>
+<text x="750" y="572" class="small">Open the run log. Usually a refused command</text>
+<text x="750" y="594" class="small">retried, or a write to the wrong path.</text>
+
+<!-- 4 the secret -->
+<rect x="60" y="638" width="1080" height="110" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="652" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="676" class="badge" text-anchor="middle">4</text>
+<text x="128" y="677" class="label">The secret</text>
+<text x="76" y="712" class="code">gh secret list</text>
+<text x="350" y="678" class="small">"KIRO_API_KEY is not set", and the step</text>
+<text x="350" y="700" class="small">exits 0 with no review</text>
+<text x="750" y="678" class="small">Set it in your fork. For a colleague's PR into</text>
+<text x="750" y="700" class="small">your fork, review locally with section 5.</text>
+
+<!-- 5 the workflow -->
+<rect x="60" y="762" width="1080" height="110" rx="12" fill="#fde8e6" stroke="#b42318" stroke-width="2"/>
+<rect x="76" y="776" width="40" height="36" rx="8" fill="#b42318"/><text x="96" y="800" class="badge" text-anchor="middle">5</text>
+<text x="128" y="801" class="label">The workflow</text>
+<text x="76" y="836" class="code">ai-review.yml</text>
+<text x="350" y="802" class="no">The review approved, or requested changes</text>
+<text x="350" y="826" class="small">The agent can't post, so the posting line changed</text>
+<text x="750" y="802" class="small">Stop. git log -p the workflow file.</text>
+<text x="750" y="826" class="small">Put --comment back before another run.</text>
+
+<!-- first move -->
+<rect x="60" y="896" width="1080" height="70" rx="12" fill="#d9f2e9" stroke="#429782" stroke-width="2"/>
+<text x="80" y="924" class="who" fill="#429782">FIRST, EVERY TIME</text>
+<text x="246" y="924" class="small">Check the row yourself. Rerun once:</text>
+<text x="534" y="924" class="code">gh workflow run ai-review.yml -f pr=&lt;n&gt;</text>
+<text x="246" y="950" class="small">Edit a file above only when it repeats. The reviewed code is the last place to look.</text>
+</svg>

@@ -1,0 +1,21 @@
+{
+  "name": "@erp/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@erp/eslint-config": "workspace:*",
+    "@erp/typescript-config": "workspace:*",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.13.0",
+    "typescript": "~6.0.3"
+  }
+}

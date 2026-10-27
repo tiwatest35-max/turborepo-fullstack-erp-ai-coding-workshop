@@ -1,0 +1,5 @@
+interface:
+  display_name: "Review PR"
+  short_description: "Cold review of one pull request, written to a file, never posted"
+policy:
+  allow_implicit_invocation: false

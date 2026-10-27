@@ -35,6 +35,18 @@
     },
     "test": {
       "dependsOn": ["^build", "db:generate"]
+    },
+    "e2e": {
+      "dependsOn": ["@erp/api#build", "@erp/web#build"],
+      "passThroughEnv": [
+        "CI",
+        "GITHUB_ACTIONS",
+        "E2E_BASE_URL",
+        "API_PORT",
+        "WEB_PORT",
+        "PLAYWRIGHT_BROWSERS_PATH"
+      ],
+      "cache": false
     }
   }
 }

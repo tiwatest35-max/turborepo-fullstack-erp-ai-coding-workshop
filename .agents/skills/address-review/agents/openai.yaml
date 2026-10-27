@@ -1,0 +1,5 @@
+interface:
+  display_name: "Address Review"
+  short_description: "Fix a pull request from its AI review, one commit, one push, never posts"
+policy:
+  allow_implicit_invocation: false

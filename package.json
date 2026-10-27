@@ -16,6 +16,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "check": "turbo run lint typecheck test build",
+    "e2e": "turbo run e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @erp/database db:generate",
@@ -23,7 +24,8 @@
     "db:deploy": "pnpm --filter @erp/database db:deploy",
     "db:reset": "pnpm --filter @erp/database db:reset",
     "db:seed": "pnpm --filter @erp/database db:seed",
-    "db:studio": "pnpm --filter @erp/database db:studio"
+    "db:studio": "pnpm --filter @erp/database db:studio",
+    "implement:frontier": "bash scripts/implement-frontier.sh"
   },
   "devDependencies": {
     "prettier": "^3.9.10",

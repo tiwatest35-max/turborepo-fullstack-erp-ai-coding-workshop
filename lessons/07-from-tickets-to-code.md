@@ -250,7 +250,7 @@ The last row is the general case. If an answer only exists in the chat, the next
 
 ## 8. Read, don't run yet: the loop without a human
 
-Two things in the skills collection run this loop without you, and both would merge tickets on their own. Lesson 6 section 4 described them: `implement-spec`, which hands every frontier ticket to an implementer sub-agent and merges the results onto one integration branch, and a shell loop that calls the agent headless once per ticket. Both remove the human from section 5. That is the step this lesson spent the most time on, and the one the guard from lesson 5 cannot replace: a hook can stop a command, not judge a diff. Know they exist, and leave them.
+Two things in the skills collection run this loop without you, and both would merge tickets on their own. Lesson 6 section 4 described them: `implement-spec`, which hands every frontier ticket to an implementer sub-agent and merges the results onto one integration branch, and a shell loop that calls the agent headless once per ticket. Both remove the human from section 5. That is the step this lesson spent the most time on, and the one the guard from lesson 5 cannot replace: a hook can stop a command, not judge a diff. Know they exist, and leave them. Lesson 9 picks up the shell loop, and keeps the human exactly where this lesson put them: at the demo, the diff and the merge.
 
 ---
 

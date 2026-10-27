@@ -34,6 +34,8 @@ Check what is running first: `docker compose ps`.
 | Delete containers + all volumes (db, pnpm store) | `pnpm docker:clean` (all clones share one `erp-workshop` volume) |
 | Prisma Studio                     | `docker compose --profile tools up -d studio` (localhost:5555)   |
 | Add a dependency                  | `pnpm add <pkg> --filter @erp/web` (run in **one** place only)   |
+| Browser tests (the `Demo:` lines) | `pnpm e2e` on the **host**; see the `write-e2e` skill            |
+| Last Playwright report or a trace | `pnpm --filter @erp/e2e exec playwright show-report`, `... show-trace <zip>` |
 
 ## Gotchas
 
@@ -44,3 +46,4 @@ Check what is running first: `docker compose ps`.
 - Dependency errors after `git pull`: `docker compose run --rm install`.
 - Env vars: defaults work without a `.env`. `apps/api/src/config/env.ts` validates them on startup. A new variable also goes into `.env.example`, and into `globalPassThroughEnv` in `turbo.json` if a turbo task needs it.
 - URLs: web `http://localhost:5173`, API `http://localhost:3000/api`, Swagger docs `/api/docs`.
+- Playwright runs on the host, never in a container: the dev image has no browser. Once per machine: `pnpm --filter @erp/e2e exec playwright install chromium` (the download only; `--with-deps` is a human's command). With `docker compose up` running, `pnpm e2e` reuses the `api` and `web` containers; with only Postgres up, it builds and starts the API and `vite preview` itself.

@@ -23,3 +23,76 @@ jobs:
       - run: pnpm format:check
 
       - run: pnpm turbo run lint typecheck test build
+
+  # The Demo: lines, run by a machine. Playwright drives the built web app against the
+  # built API and a real Postgres, on every pull request. Unlike the AI review this job
+  # is a check: red blocks the merge. See lessons/10 and apps/e2e.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d erp"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The browser download is ~100 MB; cache it by Playwright version.
+      - name: Read the Playwright version
+        id: playwright
+        working-directory: apps/e2e
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: browsers
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      # --with-deps installs the system libraries Chromium needs. The guard refuses this
+      # flag to agents; the job is not an agent, and the runner is thrown away afterwards.
+      - name: Install Chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @erp/e2e exec playwright install chromium --with-deps
+
+      - name: Install Chromium's system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @erp/e2e exec playwright install-deps chromium
+
+      # DATABASE_URL defaults to the service above (postgresql://erp:erp@localhost:5432/erp).
+      # Prisma 7 does not generate the client on install, and the seed imports it, so
+      # generate sits between the migrations and the seed.
+      - name: Migrate, generate and seed
+        run: pnpm db:deploy && pnpm db:generate && pnpm db:seed
+
+      # Builds the API and the web app, then Playwright starts both and runs apps/e2e/tests.
+      - run: pnpm e2e
+
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/e2e/playwright-report
+            apps/e2e/test-results
+          retention-days: 7

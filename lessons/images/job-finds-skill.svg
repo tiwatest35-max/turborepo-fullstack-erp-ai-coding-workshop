@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1130" viewBox="0 0 1200 1130" role="img" aria-labelledby="title desc">
+<title id="title">How the job finds the agent and the skill</title><desc id="desc">Top to bottom in four rows. First, the checkout, a slate row: actions/checkout puts the repository at the job's working directory. On pull_request that is the merge of the PR into main, so the agent, the skill and the workflow are the pull request's versions. A file list shows what is in the checkout: the workflow, reviewer.json, reviewer.md, the .kiro/skills/review-pr symlink into .agents/skills/review-pr, the real SKILL.md, and the guard hook script. Second, kiro-cli, a slate row: run from that directory with --agent reviewer, it discovers the workspace agent in .kiro/agents, the same way kiro-cli agent list does on a laptop. Nothing is installed or registered. Third, the reviewer agent, an amber row, loads reviewer.json in three parts: the model pin and the permission rules; the resources line, skill://.kiro/skills/review-pr/SKILL.md, which puts the skill's name in front of the model and not the file; and the prompt, reviewer.md, whose first instruction is to read .kiro/skills/review-pr/SKILL.md in full. That instruction opens the file, through the symlink, to the one copy in .agents/skills that Kiro, Claude Code and Codex all read. Fourth, the skill, a green row: it runs the six checks and writes .ai-review/review.md, and the job checks the shape and posts it with --comment. A note at the bottom says what lives where: everything in the checkout, Node and kiro-cli and gh on the runner, the key in a secret.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#64748b"/></marker>
+<style>text {font-family:Arial,Helvetica,sans-serif;fill:#172033} .title {font-size:30px;font-weight:700} .label {font-size:21px;font-weight:600} .body {font-size:20px;fill:#475569} .small {font-size:17px;fill:#475569} .tiny {font-size:14px;fill:#475569} .code {font-family:Menlo,Consolas,monospace;font-size:15px;fill:#172033} .code14 {font-family:Menlo,Consolas,monospace;font-size:14px;fill:#172033} .badge {font-size:16px;font-weight:700;fill:#ffffff} .arrow {fill:none;stroke:#64748b;stroke-width:2.5;marker-end:url(#arrow)} .who {font-size:15px;font-weight:700;letter-spacing:1px} .no {font-size:16px;font-weight:700;fill:#b42318}</style></defs>
+<rect width="1200" height="1130" fill="white"/>
+<rect x="24" y="24" width="1152" height="1082" rx="12" fill="#f8fafc" stroke="#dce3eb" stroke-width="2"/>
+<text x="600" y="78" class="title" text-anchor="middle">How the job finds the agent and the skill</text>
+<text x="600" y="114" class="body" text-anchor="middle">Nothing is installed or registered. Agent, brief and skill are files in the checkout. One line in the brief opens the skill.</text>
+
+<!-- 1 checkout -->
+<rect x="60" y="150" width="1080" height="236" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="164" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="188" class="badge" text-anchor="middle">1</text>
+<text x="128" y="189" class="label">Checkout</text>
+<text x="76" y="224" class="small">actions/checkout puts the repository at the job's working directory, fetch-depth 0 so the diff against main is there.</text>
+<text x="76" y="246" class="small">On pull_request it is the merge of the PR into main: the PR's own agent, skill and workflow. On workflow_dispatch it is main.</text>
+<text x="76" y="268" class="small">Git stores the symlink as a symlink and the Ubuntu runner restores it. setup-node gives the guard hook its Node.</text>
+<rect x="76" y="286" width="1048" height="84" rx="8" fill="#f1f5f9" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="92" y="310" class="code14">.github/workflows/ai-review.yml</text>
+<text x="92" y="332" class="code14">.kiro/agents/reviewer.json</text>
+<text x="92" y="354" class="code14">.kiro/agents/reviewer.md</text>
+<text x="560" y="310" class="code14">.kiro/skills/review-pr -> ../../.agents/skills/review-pr</text>
+<text x="560" y="332" class="code14">.agents/skills/review-pr/SKILL.md</text>
+<text x="560" y="354" class="code14">scripts/agent-guard.mjs</text>
+<path d="M600 386 V418" class="arrow"/>
+
+<!-- 2 kiro-cli -->
+<rect x="60" y="426" width="1080" height="130" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+<rect x="76" y="440" width="40" height="36" rx="8" fill="#64748b"/><text x="96" y="464" class="badge" text-anchor="middle">2</text>
+<text x="128" y="465" class="label">kiro-cli, run from that directory</text>
+<text x="76" y="500" class="small">Workspace agents are found in .kiro/agents under the directory the command</text>
+<text x="76" y="522" class="small">runs in, the way kiro-cli agent list finds them on your laptop. No trust prompt.</text>
+<text x="76" y="544" class="small">--agent reviewer is the file in the checkout, nothing else.</text>
+<rect x="720" y="442" width="404" height="98" rx="8" fill="#f1f5f9" stroke="#dce3eb" stroke-width="1.5"/>
+<text x="736" y="470" class="code">kiro-cli chat --v3 --no-interactive \</text>
+<text x="736" y="494" class="code">  --agent reviewer --effort high \</text>
+<text x="736" y="518" class="code">  "Review pull request #17."</text>
+<path d="M600 556 V588" class="arrow"/>
+
+<!-- 3 reviewer agent loads reviewer.json -->
+<rect x="60" y="596" width="1080" height="290" rx="12" fill="#fff4d6" stroke="#c08a1d" stroke-width="2"/>
+<rect x="76" y="610" width="40" height="36" rx="8" fill="#c08a1d"/><text x="96" y="634" class="badge" text-anchor="middle">3</text>
+<text x="128" y="635" class="label">The reviewer agent loads reviewer.json</text>
+<text x="76" y="672" class="who" fill="#c08a1d">MODEL AND RULES</text>
+<text x="76" y="698" class="code">"model": "claude-sonnet-5.5"</text>
+<text x="76" y="722" class="small">permissions.rules: fs_write only under</text>
+<text x="76" y="744" class="small">.ai-review/, shell allow-listed.</text>
+<text x="76" y="766" class="small">Headless: every ask is a deny.</text>
+<text x="436" y="672" class="who" fill="#c08a1d">RESOURCES</text>
+<text x="436" y="698" class="code14">skill://.kiro/skills/review-pr/SKILL.md</text>
+<text x="436" y="722" class="small">Puts the name review-pr in front of</text>
+<text x="436" y="744" class="small">the model. Not the file. The agent</text>
+<text x="436" y="766" class="small">still has to open it.</text>
+<text x="796" y="672" class="who" fill="#c08a1d">PROMPT: reviewer.md</text>
+<text x="796" y="698" class="small">"Before anything else, read</text>
+<text x="796" y="720" class="code14">.kiro/skills/review-pr/SKILL.md</text>
+<text x="796" y="744" class="small">in full and follow it exactly."</text>
+<text x="796" y="766" class="small">This line is what opens the file.</text>
+<rect x="76" y="786" width="1048" height="80" rx="8" fill="#ffffff" stroke="#c08a1d" stroke-width="1.5"/>
+<text x="92" y="814" class="code">.kiro/skills/review-pr/SKILL.md  ->  .agents/skills/review-pr/SKILL.md</text>
+<text x="92" y="842" class="small">One copy. Claude Code reads it through .claude/skills, Codex through agents/openai.yaml. Edit it once, all three change.</text>
+<path d="M600 886 V918" class="arrow"/>
+
+<!-- 4 skill runs, job posts -->
+<rect x="60" y="926" width="1080" height="104" rx="12" fill="#d9f2e9" stroke="#429782" stroke-width="2"/>
+<rect x="76" y="940" width="40" height="36" rx="8" fill="#429782"/><text x="96" y="964" class="badge" text-anchor="middle">4</text>
+<text x="128" y="965" class="label">The skill takes over</text>
+<text x="76" y="1000" class="small">Six checks, severities, template, as in section 4. One file, nothing else.</text>
+<text x="76" y="1022" class="small">The job checks the shape, adds model, effort, commit, and posts it.</text>
+<rect x="720" y="942" width="404" height="72" rx="8" fill="#ffffff" stroke="#429782" stroke-width="1.5"/>
+<text x="736" y="970" class="code">.ai-review/review.md</text>
+<text x="736" y="996" class="code">gh pr review "$PR_NUMBER" --comment</text>
+
+<!-- legend -->
+<rect x="60" y="1050" width="1080" height="44" rx="12" fill="#ffffff" stroke="#dce3eb" stroke-width="2"/>
+<text x="80" y="1079" class="who" fill="#64748b">IN THE CHECKOUT</text><text x="256" y="1079" class="small">agent, brief, skill, hook, workflow.</text>
+<text x="560" y="1079" class="who" fill="#64748b">ON THE RUNNER</text><text x="716" y="1079" class="small">Node, kiro-cli, gh.</text>
+<text x="880" y="1079" class="who" fill="#64748b">IN A SECRET</text><text x="1004" y="1079" class="small">the key.</text>
+</svg>

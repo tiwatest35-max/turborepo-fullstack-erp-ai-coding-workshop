@@ -50,6 +50,8 @@ The last command should show your own GitHub name, `"isFork": true` and `"hasIss
 
 Two facts worth knowing: `gh repo fork --remote` renames your existing `origin` to `upstream` rather than deleting it, so you can still pull the workshop's updates. And GitHub disables Issues on every fork by default, which is why the second command exists. Skipping it produces a confusing "Issues has been disabled" error ten minutes from now, in the middle of publishing.
 
+**Switch on Actions while you are here.** GitHub also disables workflows on every fork, and there is no `gh` flag for the button that turns them back on. Open your fork on github.com with `gh browse`, click the **Actions** tab, and press the green button that says you understand your workflows and want them enabled. Nothing in this lesson needs it, but lesson 7's CI, lesson 8's AI review and lessons 9 and 10 all do, and a fork where it was never pressed opens pull requests with no checks on them. Lesson 7 section 2 says how to tell.
+
 Then open Kiro CLI in the repository root and accept the trust prompt when it asks. Everything below happens in that one session.
 
 ---
@@ -105,6 +107,8 @@ Claude Code and Codex can also install the whole collection as a **plugin**: `cl
 ## 4. Configure the tracker and the label
 
 `to-spec` and `to-tickets` both "publish to the issue tracker" and refuse to guess which one. A short setup skill records the answer in the repository.
+
+The tracker is a choice, and this file is the whole of it: the skills never name GitHub. Lesson 11 swaps the file for a Jira one and runs the same three skills through an MCP server.
 
 In Kiro CLI:
 
