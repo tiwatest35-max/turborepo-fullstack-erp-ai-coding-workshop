@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract';
 import * as z from 'zod';
-import { PaginationInputSchema, paginated } from './conventions.js';
+import { ApiErrorSchema, PaginationInputSchema, paginated } from './conventions.js';
 
 /**
  * A reference route that exercises the shared conventions end-to-end. It paginates
@@ -21,6 +21,10 @@ export const conventionsContract = {
       path: '/conventions/example',
       summary: 'Reference list route demonstrating the pagination envelope',
       tags: ['Conventions'],
+    })
+    .errors({
+      // The standard actionable error shape, surfaced in the error `data`.
+      BAD_REQUEST: { data: ApiErrorSchema },
     })
     .input(PaginationInputSchema)
     .output(paginated(ExampleItemSchema)),

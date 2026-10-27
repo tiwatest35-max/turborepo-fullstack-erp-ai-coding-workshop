@@ -11,9 +11,11 @@ import * as z from 'zod';
  *   trace or database detail.
  */
 
+// List routes are GET, so page/pageSize arrive as query strings over HTTP.
+// Coerce to number before validating so `?page=2` is accepted, not rejected.
 export const PaginationInputSchema = z.object({
-  page: z.int().min(1).default(1),
-  pageSize: z.int().min(1).max(100).default(20),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type PaginationInput = z.infer<typeof PaginationInputSchema>;
 
@@ -45,3 +47,13 @@ export const ApiErrorSchema = z.object({
   action: ErrorActionSchema,
 });
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+
+/**
+ * Builds the actionable error payload handlers attach to a thrown error.
+ * Using this is how a feature returns the standard Thai error shape instead of
+ * a raw exception; it carries only the safe fields (never a stack trace or DB
+ * detail). Handlers throw an ORPCError whose `data` is the result of this.
+ */
+export function apiError(code: string, messageTh: string, action: ErrorAction): ApiError {
+  return { code, messageTh, action };
+}
