@@ -129,6 +129,38 @@ describe('SuppliersController', () => {
     });
   });
 
+  it('maps a duplicate code on update to the Thai CONFLICT error', async () => {
+    const { controller, prisma } = await createController();
+    prisma.supplier.update.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+
+    const error = await call(controller.update(), { id: 'sup1', code: 'SUP02' }).catch((e) => e);
+
+    expect(error.code).toBe('CONFLICT');
+    expect(error.data).toMatchObject({ code: 'SUPPLIER_CODE_TAKEN', action: 'correct_input' });
+  });
+
+  it('maps a missing row on update to the Thai NOT_FOUND error', async () => {
+    const { controller, prisma } = await createController();
+    prisma.supplier.update.mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'P2025' }),
+    );
+
+    const error = await call(controller.update(), { id: 'gone', name: 'X' }).catch((e) => e);
+
+    expect(error.code).toBe('NOT_FOUND');
+    expect(error.data).toMatchObject({ code: 'SUPPLIER_NOT_FOUND', action: 'correct_input' });
+  });
+
+  it('rethrows an unexpected error on update instead of masking it as NOT_FOUND', async () => {
+    const { controller, prisma } = await createController();
+    prisma.supplier.update.mockRejectedValue(new Error('connection refused'));
+
+    const error = await call(controller.update(), { id: 'sup1', name: 'X' }).catch((e) => e);
+
+    expect(error.code).not.toBe('NOT_FOUND');
+    expect(error.code).not.toBe('CONFLICT');
+  });
+
   it('lists suppliers newest-first in the shared pagination envelope', async () => {
     const { controller, prisma } = await createController();
     prisma.supplier.findMany.mockResolvedValue([sup]);
