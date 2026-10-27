@@ -6,7 +6,7 @@ export const DEMO_PASSWORD = 'password';
 
 export const accounts = {
   admin: { email: 'admin@erp.local', name: 'Admin User', role: 'ADMIN' },
-  staff: { email: 'staff@erp.local', name: 'Staff User', role: 'STAFF' },
+  staff: { email: 'staff_b01@erp.local', name: 'Staff B01', role: 'STORE_EMPLOYEE' },
 } as const;
 
 export type AccountName = keyof typeof accounts;
