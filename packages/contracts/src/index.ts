@@ -1,11 +1,13 @@
 import { authContract } from './auth.js';
 import { conventionsContract } from './conventions-route.js';
 import { healthContract } from './health.js';
+import { supplierContract } from './supplier.js';
 
 export * from './auth.js';
 export * from './conventions.js';
 export * from './conventions-route.js';
 export * from './health.js';
+export * from './supplier.js';
 
 /**
  * The single source of truth for the HTTP API.
@@ -18,6 +20,7 @@ export const contract = {
   auth: authContract,
   conventions: conventionsContract,
   health: healthContract,
+  suppliers: supplierContract,
 };
 
 export type Contract = typeof contract;

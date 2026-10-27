@@ -10,6 +10,17 @@ const stores = [
   { code: 'B02', name: 'Riverside Store' },
 ];
 
+// Supplier from TOR Section 8.1.
+const suppliers = [
+  {
+    code: 'SUP01',
+    name: 'SupplyOne Co Ltd',
+    contactName: null,
+    contactPhone: null,
+    contactEmail: null,
+  },
+];
+
 // Test users from TOR Section 8.1, with the roles from Section 2. Store employees
 // are bound to one store; ADMIN and MANAGER are not store-bound.
 const demoUsers = [
@@ -32,6 +43,14 @@ async function main() {
     storeIdByCode.set(store.code, row.id);
   }
 
+  for (const supplier of suppliers) {
+    await prisma.supplier.upsert({
+      where: { code: supplier.code },
+      update: { name: supplier.name },
+      create: supplier,
+    });
+  }
+
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   for (const user of demoUsers) {
     const storeId = user.storeCode ? storeIdByCode.get(user.storeCode) : null;
@@ -42,7 +61,7 @@ async function main() {
     });
   }
   console.log(
-    `Seeded ${stores.length} stores and ${demoUsers.length} users (password: "${DEMO_PASSWORD}").`,
+    `Seeded ${stores.length} stores, ${suppliers.length} suppliers, and ${demoUsers.length} users (password: "${DEMO_PASSWORD}").`,
   );
 }
 
