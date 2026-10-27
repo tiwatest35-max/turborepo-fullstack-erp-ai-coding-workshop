@@ -3,7 +3,7 @@ import * as z from 'zod';
 import { ApiErrorSchema, PaginationInputSchema, paginated } from './conventions.js';
 
 /** A price in THB: never negative (MD-02), at most two decimal places. */
-const PriceSchema = z
+export const PriceSchema = z
   .number()
   .min(0)
   .refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6, {
