@@ -182,6 +182,198 @@ describe('GoodsReceiptsController (real Postgres)', () => {
       expect(await receiptMovements()).toHaveLength(2);
     });
 
+    it("AC-04: staff_b02 cannot receive for B01's order, and no business data changes", async () => {
+      const { order, line } = await demoOrder();
+
+      const error = await receive(await staffB02(), {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'FORBIDDEN',
+        data: { code: 'GR_STORE_FORBIDDEN', action: 'correct_input' },
+      });
+      expect(await receiptCount()).toBe(0);
+      expect(await receiptMovements()).toEqual([]);
+      expect(await b01Stock()).toBe(10);
+      expect(await statusOf(order.id)).toBe('APPROVED');
+      expect((await db.prisma.documentSequence.findMany()).map((s) => s.prefix)).not.toContain(
+        'GR',
+      );
+    });
+
+    it('answers NOT_FOUND for an order that does not exist', async () => {
+      const error = await receive(await staffB01(), {
+        purchaseOrderId: 'missing',
+        lines: [{ purchaseOrderLineId: 'whatever', quantity: 1 }],
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'NOT_FOUND', data: { code: 'GR_ORDER_NOT_FOUND' } });
+    });
+
+    it.each(['DRAFT', 'PENDING_APPROVAL', 'REJECTED', 'CANCELLED', 'COMPLETED'] as const)(
+      'refuses an order that is %s (GR-01)',
+      async (status) => {
+        const { order, line } = await demoOrder();
+        await db.prisma.purchaseOrder.update({ where: { id: order.id }, data: { status } });
+
+        const error = await receive(await staffB01(), {
+          purchaseOrderId: order.id,
+          lines: [{ purchaseOrderLineId: line.id, quantity: 1 }],
+        }).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({
+          code: 'CONFLICT',
+          data: { code: 'GR_ORDER_NOT_RECEIVABLE', action: 'correct_input' },
+        });
+        expect(await receiptCount()).toBe(0);
+        expect(await b01Stock()).toBe(10);
+        expect(await statusOf(order.id)).toBe(status);
+      },
+    );
+
+    it('refuses a product that is not on the order and receives nothing', async () => {
+      const { order, line } = await demoOrder();
+      const sku002 = await db.prisma.product.findUniqueOrThrow({ where: { sku: 'SKU002' } });
+      const otherOrder = await db.prisma.purchaseOrder.create({
+        data: {
+          number: 'PO-OTHER',
+          status: 'APPROVED',
+          supplierId: order.supplierId,
+          storeId: order.storeId,
+          expectedReceiptDate: order.expectedReceiptDate,
+          createdById: order.createdById,
+          lines: {
+            create: {
+              productId: sku002.id,
+              sku: sku002.sku,
+              productName: sku002.name,
+              unit: sku002.unit,
+              quantity: 5,
+              unitPrice: 20,
+            },
+          },
+        },
+        include: { lines: true },
+      });
+
+      const error = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: [
+          { purchaseOrderLineId: line.id, quantity: 1 },
+          { purchaseOrderLineId: otherOrder.lines[0]!.id, quantity: 5 },
+        ],
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'BAD_REQUEST', data: { code: 'GR_LINE_NOT_ON_ORDER' } });
+      expect(await receiptCount()).toBe(0);
+      expect(await b01Stock()).toBe(10);
+      expect(await b01Stock('SKU002')).toBe(5);
+    });
+
+    it.each([
+      ['a negative quantity', [{ quantity: -1 }]],
+      ['a fractional quantity', [{ quantity: 1.5 }]],
+      ['only zero quantities', [{ quantity: 0 }]],
+      ['no lines', []],
+    ])('rejects %s', async (_name, lines) => {
+      const { order, line } = await demoOrder();
+
+      const error = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: lines.map(({ quantity }) => ({ purchaseOrderLineId: line.id, quantity })),
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'BAD_REQUEST' });
+      expect(await receiptCount()).toBe(0);
+      expect(await b01Stock()).toBe(10);
+    });
+
+    it('rejects the same line twice in one receipt', async () => {
+      const { order, line } = await demoOrder();
+
+      const error = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: [
+          { purchaseOrderLineId: line.id, quantity: 5 },
+          { purchaseOrderLineId: line.id, quantity: 5 },
+        ],
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'BAD_REQUEST' });
+      expect(await receiptCount()).toBe(0);
+    });
+
+    it('takes no date from the client: the system confirmation time is used (Q-03)', async () => {
+      const { order, line } = await demoOrder();
+      const backdated = {
+        idempotencyKey: newKey(),
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+        receivedAt: '2020-01-01T00:00:00.000Z',
+      };
+      const before = Date.now();
+
+      const refused = await call((await controller()).confirm(await staffB01()), backdated).catch(
+        (e: unknown) => e,
+      );
+      const receipt = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+
+      expect(refused).toMatchObject({ code: 'BAD_REQUEST' });
+      expect(await receiptCount()).toBe(1);
+      expect(new Date(receipt.receivedAt).getTime()).toBeGreaterThanOrEqual(before - 1000);
+      expect(new Date(receipt.receivedAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    });
+
+    it('skips zero-quantity lines: no receipt line, no movement for them', async () => {
+      const { order, line } = await demoOrder();
+      const sku002 = await db.prisma.product.findUniqueOrThrow({ where: { sku: 'SKU002' } });
+      const second = await db.prisma.purchaseOrderLine.create({
+        data: {
+          purchaseOrderId: order.id,
+          productId: sku002.id,
+          sku: sku002.sku,
+          productName: sku002.name,
+          unit: sku002.unit,
+          quantity: 5,
+          unitPrice: 20,
+        },
+      });
+
+      const receipt = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: [
+          { purchaseOrderLineId: line.id, quantity: 0 },
+          { purchaseOrderLineId: second.id, quantity: 5 },
+        ],
+      });
+
+      expect(receipt.lines.map((l) => [l.sku, l.quantity])).toEqual([['SKU002', 5]]);
+      expect(await receiptMovements()).toHaveLength(1);
+      expect(await b01Stock()).toBe(10);
+      expect(await b01Stock('SKU002')).toBe(10);
+      // SKU001 still has all 20 outstanding, so the order is not complete.
+      expect(await statusOf(order.id)).toBe('PARTIALLY_RECEIVED');
+    });
+
+    it('still receives a product deactivated after approval, against its approved line (Q-02)', async () => {
+      const { order, line } = await demoOrder();
+      await db.prisma.product.update({ where: { sku: 'SKU001' }, data: { active: false } });
+
+      const receipt = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+
+      expect(receipt.lines[0]).toMatchObject({ sku: 'SKU001', quantity: 8 });
+      expect(await b01Stock()).toBe(18);
+      expect(await statusOf(order.id)).toBe('PARTIALLY_RECEIVED');
+    });
+
     it('leaves the order Partially Received after a further partial delivery', async () => {
       const { order, line } = await demoOrder();
       const staff = await staffB01();

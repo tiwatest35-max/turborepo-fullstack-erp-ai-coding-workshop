@@ -1,5 +1,5 @@
 import { Controller } from '@nestjs/common';
-import { contract, type GoodsReceipt, type User } from '@erp/contracts';
+import { apiError, contract, type GoodsReceipt, type User } from '@erp/contracts';
 import { Prisma } from '@erp/database';
 import { Implement, implement } from '@orpc/nest';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
@@ -48,6 +48,18 @@ function toGoodsReceipt(row: ReceiptRow): GoodsReceipt {
   };
 }
 
+const LINE_NOT_ON_ORDER = apiError(
+  'GR_LINE_NOT_ON_ORDER',
+  'รับได้เฉพาะสินค้าที่อยู่ในใบสั่งซื้อนี้ ไม่สามารถเพิ่มสินค้าอื่นได้',
+  'correct_input',
+);
+const exceedsOrdered = (sku: string, outstanding: number) =>
+  apiError(
+    'GR_EXCEEDS_ORDERED',
+    `จำนวนที่รับของ ${sku} เกินจำนวนที่สั่ง เหลือรับได้อีก ${outstanding}`,
+    'correct_input',
+  );
+
 @Controller()
 export class GoodsReceiptsController {
   constructor(
@@ -59,19 +71,37 @@ export class GoodsReceiptsController {
   @Roles('STORE_EMPLOYEE')
   @Implement(contract.goodsReceipts.confirm)
   confirm(@CurrentUser() user: User) {
-    return implement(contract.goodsReceipts.confirm).handler(({ input }) =>
+    return implement(contract.goodsReceipts.confirm).handler(({ input, errors }) =>
       this.prisma.$transaction(async (tx) => {
+        // Receipts for one order take turns: a second one waits here until the first commits,
+        // so it sees the quantities the first one received (GR-05).
+        await tx.$queryRaw`SELECT "id" FROM "PurchaseOrder" WHERE "id" = ${input.purchaseOrderId} FOR UPDATE`;
         const order = await tx.purchaseOrder.findUniqueOrThrow({
           where: { id: input.purchaseOrderId },
           include: { lines: true },
         });
+
         const received = input.lines.filter((line) => line.quantity > 0);
+        const orderLines = new Map(order.lines.map((line) => [line.id, line]));
+        // Every line the client names must be a line of this order, even one received at zero.
+        if (input.lines.some((line) => !orderLines.has(line.purchaseOrderLineId))) {
+          throw errors.BAD_REQUEST({ data: LINE_NOT_ON_ORDER });
+        }
 
         for (const line of received) {
-          await tx.purchaseOrderLine.update({
-            where: { id: line.purchaseOrderLineId },
+          const orderLine = orderLines.get(line.purchaseOrderLineId)!;
+          // One statement checks and changes the total, so it can never pass the ordered quantity.
+          const moved = await tx.purchaseOrderLine.updateMany({
+            where: {
+              id: orderLine.id,
+              receivedQuantity: { lte: orderLine.quantity - line.quantity },
+            },
             data: { receivedQuantity: { increment: line.quantity } },
           });
+          if (moved.count === 0) {
+            const outstanding = orderLine.quantity - orderLine.receivedQuantity;
+            throw errors.BAD_REQUEST({ data: exceedsOrdered(orderLine.sku, outstanding) });
+          }
         }
 
         const number = await this.numbering.next(tx, NUMBER_PREFIX);
@@ -111,9 +141,15 @@ export class GoodsReceiptsController {
           });
         }
 
+        // Completed when every line is fully received, otherwise Partially Received (GR-03).
+        const outstanding = await tx.purchaseOrderLine.findMany({
+          where: { purchaseOrderId: order.id },
+          select: { quantity: true, receivedQuantity: true },
+        });
+        const complete = outstanding.every((line) => line.receivedQuantity === line.quantity);
         await tx.purchaseOrder.update({
           where: { id: order.id },
-          data: { status: 'PARTIALLY_RECEIVED' },
+          data: { status: complete ? 'COMPLETED' : 'PARTIALLY_RECEIVED' },
         });
         return toGoodsReceipt(receipt);
       }),
