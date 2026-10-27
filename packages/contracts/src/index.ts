@@ -2,6 +2,7 @@ import { authContract } from './auth.js';
 import { conventionsContract } from './conventions-route.js';
 import { healthContract } from './health.js';
 import { productContract } from './product.js';
+import { stockContract } from './stock.js';
 import { storeContract } from './store.js';
 import { supplierContract } from './supplier.js';
 
@@ -10,6 +11,7 @@ export * from './conventions.js';
 export * from './conventions-route.js';
 export * from './health.js';
 export * from './product.js';
+export * from './stock.js';
 export * from './store.js';
 export * from './supplier.js';
 
@@ -25,6 +27,7 @@ export const contract = {
   conventions: conventionsContract,
   health: healthContract,
   products: productContract,
+  stock: stockContract,
   stores: storeContract,
   suppliers: supplierContract,
 };

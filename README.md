@@ -93,6 +93,8 @@ docker compose exec api pnpm add <pkg> --filter @erp/web       # add a dependenc
 
 > Already have Node 24 + pnpm? You can run the same commands directly (`pnpm check`, `pnpm db:migrate ...`), and even run the apps on your machine with `pnpm dev:local`. It starts only Postgres in Docker, applies migrations, then runs `pnpm dev`. Don't run it at the same time as `docker compose up`, because they use the same ports (`docker compose stop api web` first).
 
+> `pnpm test` includes the API integration tests (`apps/api/src/**/*.int.spec.ts`). They need the Postgres service running (`docker compose up -d --wait postgres`). Each Vitest worker creates its own `erp_test_*` database on that server, migrates it, loads the TOR Section 8.1 data and resets it between scenarios. Your `erp` database is never touched.
+
 ## 4. How the project is organised
 
 ```
