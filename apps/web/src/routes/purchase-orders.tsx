@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ORPCError } from '@orpc/client';
 import { type FormEvent, useState } from 'react';
-import type { PurchaseOrder, PurchaseOrderStatus } from '@erp/contracts';
+import type { AuditOutcome, PurchaseOrder, PurchaseOrderStatus } from '@erp/contracts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,23 @@ import { orpc } from '@/lib/orpc';
 const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
   DRAFT: 'ฉบับร่าง',
   PENDING_APPROVAL: 'รออนุมัติ',
+  APPROVED: 'อนุมัติแล้ว',
+  PARTIALLY_RECEIVED: 'รับของบางส่วน',
+  COMPLETED: 'เสร็จสมบูรณ์',
+  REJECTED: 'ไม่อนุมัติ',
+  CANCELLED: 'ยกเลิก',
+};
+
+/** Who decided, said the way each decision reads: "approved by", "rejected by", "cancelled by". */
+const DECIDED_BY_LABEL: Partial<Record<PurchaseOrderStatus, string>> = {
+  APPROVED: 'อนุมัติโดย',
+  REJECTED: 'ไม่อนุมัติโดย',
+  CANCELLED: 'ยกเลิกโดย',
+};
+
+const OUTCOME_LABEL: Record<AuditOutcome, string> = {
+  APPROVED: 'อนุมัติ',
+  REJECTED: 'ไม่อนุมัติ',
 };
 
 /** A line while it is being typed: numbers stay text until the form is sent. */
@@ -36,11 +53,21 @@ function errorMessage(error: unknown): string {
   return 'บันทึกใบสั่งซื้อไม่สำเร็จ โปรดลองอีกครั้ง';
 }
 
-/** Purchasing screen: draft a purchase order, edit it, and submit it for approval. */
+/** The message for a failed approve, reject, cancel or submit. */
+function actionErrorMessage(error: unknown): string {
+  if (error instanceof ORPCError && error.code === 'BAD_REQUEST') {
+    return 'ต้องระบุเหตุผล';
+  }
+  return errorMessage(error);
+}
+
+/** Purchasing screen: draft, edit, submit, approve, reject and cancel purchase orders. */
 export function PurchaseOrdersPage() {
   const queryClient = useQueryClient();
   const user = useCurrentUser();
   const canWrite = user?.role === 'PURCHASING';
+  const isManager = user?.role === 'MANAGER';
+  const canReadAuditLog = isManager || user?.role === 'ADMIN';
 
   const orders = useQuery(
     orpc.purchaseOrders.list.queryOptions({ input: { page: 1, pageSize: 20 } }),
@@ -54,8 +81,26 @@ export function PurchaseOrdersPage() {
     orpc.products.list.queryOptions({ input: { page: 1, pageSize: 100, status: 'all' } }),
   );
 
-  const refreshList = () =>
+  const auditLog = useQuery(
+    orpc.auditLog.list.queryOptions({ input: { page: 1, pageSize: 20 }, enabled: canReadAuditLog }),
+  );
+
+  const refreshList = () => {
     void queryClient.invalidateQueries({ queryKey: orpc.purchaseOrders.list.key() });
+    void queryClient.invalidateQueries({ queryKey: orpc.auditLog.key() });
+  };
+
+  // The reason a manager or creator typed for each order, by order id.
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  // The last submit, approve, reject or cancel that failed; cleared when the next one succeeds.
+  const [actionError, setActionError] = useState<unknown>(null);
+  const actionOptions = {
+    onSuccess: () => {
+      setActionError(null);
+      refreshList();
+    },
+    onError: (error: unknown) => setActionError(error),
+  };
 
   // The draft being edited, or null while writing a new one.
   const [editing, setEditing] = useState<PurchaseOrder | null>(null);
@@ -88,9 +133,15 @@ export function PurchaseOrdersPage() {
       },
     }),
   );
-  const submitOrder = useMutation(
-    orpc.purchaseOrders.submit.mutationOptions({ onSuccess: refreshList }),
-  );
+  const submitOrder = useMutation(orpc.purchaseOrders.submit.mutationOptions(actionOptions));
+  const approveOrder = useMutation(orpc.purchaseOrders.approve.mutationOptions(actionOptions));
+  const rejectOrder = useMutation(orpc.purchaseOrders.reject.mutationOptions(actionOptions));
+  const cancelOrder = useMutation(orpc.purchaseOrders.cancel.mutationOptions(actionOptions));
+  const acting =
+    submitOrder.isPending ||
+    approveOrder.isPending ||
+    rejectOrder.isPending ||
+    cancelOrder.isPending;
 
   const startEditing = (order: PurchaseOrder) => {
     create.reset();
@@ -127,6 +178,12 @@ export function PurchaseOrdersPage() {
     if (editing) update.mutate({ id: editing.id, ...contents });
     else create.mutate(contents);
   };
+
+  // Only a Draft or Pending Approval order can be cancelled, by its creator or a manager (PO-04).
+  // The API makes the same checks; this only decides whether to show the button.
+  const canCancel = (order: PurchaseOrder) =>
+    (order.status === 'DRAFT' || order.status === 'PENDING_APPROVAL') &&
+    (isManager || (user?.role === 'PURCHASING' && order.createdById === user.id));
 
   const saveError = editing ? update.error : create.error;
   const saving = create.isPending || update.isPending;
@@ -286,9 +343,9 @@ export function PurchaseOrdersPage() {
           <CardTitle>รายการใบสั่งซื้อ</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {submitOrder.error && (
+          {actionError !== null && (
             <p role="alert" className="text-sm text-destructive">
-              {errorMessage(submitOrder.error)}
+              {actionErrorMessage(actionError)}
             </p>
           )}
 
@@ -332,12 +389,51 @@ export function PurchaseOrdersPage() {
                             type="button"
                             size="sm"
                             aria-label={`ส่งอนุมัติ ${order.number}`}
-                            disabled={submitOrder.isPending}
+                            disabled={acting}
                             onClick={() => submitOrder.mutate({ id: order.id })}
                           >
                             ส่งอนุมัติ
                           </Button>
                         </>
+                      )}
+                      {isManager && order.status === 'PENDING_APPROVAL' && (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            aria-label={`อนุมัติ ${order.number}`}
+                            disabled={acting}
+                            onClick={() => approveOrder.mutate({ id: order.id })}
+                          >
+                            อนุมัติ
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`ไม่อนุมัติ ${order.number}`}
+                            disabled={acting}
+                            onClick={() =>
+                              rejectOrder.mutate({ id: order.id, reason: reasons[order.id] ?? '' })
+                            }
+                          >
+                            ไม่อนุมัติ
+                          </Button>
+                        </>
+                      )}
+                      {canCancel(order) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          aria-label={`ยกเลิกใบสั่งซื้อ ${order.number}`}
+                          disabled={acting}
+                          onClick={() =>
+                            cancelOrder.mutate({ id: order.id, reason: reasons[order.id] ?? '' })
+                          }
+                        >
+                          ยกเลิกใบสั่งซื้อ
+                        </Button>
                       )}
                     </span>
                   </div>
@@ -349,12 +445,59 @@ export function PurchaseOrdersPage() {
                       </p>
                     ))}
                   </div>
+                  {order.decidedAt !== null && (
+                    <p className="text-sm text-muted-foreground">
+                      {DECIDED_BY_LABEL[order.status]} {order.decidedByName}
+                      {order.decisionReason ? ` · เหตุผล: ${order.decisionReason}` : ''}
+                    </p>
+                  )}
+                  {(canCancel(order) || (isManager && order.status === 'PENDING_APPROVAL')) && (
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`reason-${order.id}`}>เหตุผล {order.number}</Label>
+                      <Input
+                        id={`reason-${order.id}`}
+                        className="max-w-sm"
+                        value={reasons[order.id] ?? ''}
+                        onChange={(e) => setReasons({ ...reasons, [order.id]: e.target.value })}
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
+
+      {canReadAuditLog && (
+        <Card>
+          <CardHeader>
+            <CardTitle>บันทึกการตรวจสอบ</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {auditLog.isPending ? (
+              <p className="text-muted-foreground">กำลังโหลด…</p>
+            ) : auditLog.isError ? (
+              <p role="alert" className="text-destructive">
+                โหลดบันทึกการตรวจสอบไม่สำเร็จ โปรดลองอีกครั้ง
+              </p>
+            ) : auditLog.data.items.length === 0 ? (
+              <p className="text-muted-foreground">ยังไม่มีบันทึก</p>
+            ) : (
+              <ul aria-label="บันทึกการตรวจสอบ" className="divide-y">
+                {auditLog.data.items.map((entry) => (
+                  <li key={entry.id} className="py-2 text-sm">
+                    <span className="font-medium">{entry.sourceDocumentNumber}</span>{' '}
+                    {OUTCOME_LABEL[entry.outcome]} โดย {entry.actorName} ·{' '}
+                    {new Date(entry.createdAt).toLocaleString('th-TH')}
+                    {entry.reason ? ` · เหตุผล: ${entry.reason}` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

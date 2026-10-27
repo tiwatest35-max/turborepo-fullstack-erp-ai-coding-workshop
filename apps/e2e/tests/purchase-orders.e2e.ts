@@ -97,6 +97,6 @@ test.describe('purchase orders', () => {
     // Submit it: Pending Approval, and it can no longer be edited or submitted again.
     await order.getByRole('button', { name: /^ส่งอนุมัติ PO-/ }).click();
     await expect(order.getByText('รออนุมัติ', { exact: true })).toBeVisible();
-    await expect(order.getByRole('button')).toHaveCount(0);
+    await expect(order.getByRole('button', { name: /^(แก้ไข|ส่งอนุมัติ) PO-/ })).toHaveCount(0);
   });
 });
