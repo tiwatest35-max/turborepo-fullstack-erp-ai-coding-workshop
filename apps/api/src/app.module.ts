@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ORPCModule } from '@orpc/nest';
 import { AuthModule } from './auth/auth.module.js';
 import { validateEnv } from './config/env.js';
+import { ConventionsModule } from './conventions/conventions.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OpenApiModule } from './openapi/openapi.module.js';
@@ -18,6 +19,7 @@ import { OpenApiModule } from './openapi/openapi.module.js';
     ORPCModule.forRoot({}),
     DatabaseModule,
     AuthModule,
+    ConventionsModule,
     HealthModule,
     OpenApiModule,
   ],

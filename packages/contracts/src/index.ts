@@ -1,7 +1,10 @@
 import { authContract } from './auth.js';
+import { conventionsContract } from './conventions-route.js';
 import { healthContract } from './health.js';
 
 export * from './auth.js';
+export * from './conventions.js';
+export * from './conventions-route.js';
 export * from './health.js';
 
 /**
@@ -13,6 +16,7 @@ export * from './health.js';
  */
 export const contract = {
   auth: authContract,
+  conventions: conventionsContract,
   health: healthContract,
 };
 
