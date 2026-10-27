@@ -3,6 +3,7 @@ import { RequireAuth } from '@/components/require-auth';
 import { HomePage } from '@/routes/home';
 import { LoginPage } from '@/routes/login';
 import { RootLayout } from '@/routes/root-layout';
+import { ProductsPage } from '@/routes/products';
 import { StoresPage } from '@/routes/stores';
 import { SuppliersPage } from '@/routes/suppliers';
 
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
         element: <RootLayout />,
         children: [
           { index: true, element: <HomePage /> },
+          { path: 'products', element: <ProductsPage /> },
           { path: 'stores', element: <StoresPage /> },
           { path: 'suppliers', element: <SuppliersPage /> },
         ],

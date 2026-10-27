@@ -22,12 +22,13 @@ enum Role {
 }
 
 model Store {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users     User[]
+  id                String                    @id @default(cuid())
+  code              String                    @unique
+  name              String
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  users             User[]
+  reorderThresholds ProductReorderThreshold[]
 }
 
 model User {
@@ -53,4 +54,31 @@ model Supplier {
   contactEmail String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id                String                    @id @default(cuid())
+  /// Unique across the organization (MD-01).
+  sku               String                    @unique
+  name              String
+  category          String
+  unit              String
+  /// THB, never negative (MD-02). Enforced by the contract schema.
+  sellingPrice      Decimal                   @db.Decimal(12, 2)
+  /// Deactivated products stay in lists and search (MD-02).
+  active            Boolean                   @default(true)
+  reorderThresholds ProductReorderThreshold[]
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+}
+
+/// The reorder threshold of one product in one store (MD-01). Whole units, never negative (MD-02).
+model ProductReorderThreshold {
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storeId   String
+  store     Store   @relation(fields: [storeId], references: [id])
+  threshold Int
+
+  @@id([productId, storeId])
 }

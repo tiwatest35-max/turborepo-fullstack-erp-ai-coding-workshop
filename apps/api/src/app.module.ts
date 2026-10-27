@@ -7,6 +7,7 @@ import { ConventionsModule } from './conventions/conventions.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OpenApiModule } from './openapi/openapi.module.js';
+import { ProductsModule } from './products/products.module.js';
 import { StoresModule } from './stores/stores.module.js';
 import { SuppliersModule } from './suppliers/suppliers.module.js';
 
@@ -24,6 +25,7 @@ import { SuppliersModule } from './suppliers/suppliers.module.js';
     // The reference conventions route is a demonstration only; never expose it
     // (or its OpenAPI entry) in production. Removed once a real list route exists.
     ...(process.env.NODE_ENV === 'production' ? [] : [ConventionsModule]),
+    ProductsModule,
     StoresModule,
     SuppliersModule,
     HealthModule,
