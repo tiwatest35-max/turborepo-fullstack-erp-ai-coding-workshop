@@ -21,6 +21,27 @@ const suppliers = [
   },
 ];
 
+// Products from TOR Section 8.1. Every product has a reorder threshold of 3 in every store.
+// The TOR lists no categories, so these are placeholders.
+const products = [
+  {
+    sku: 'SKU001',
+    name: 'Drinking water pack of 6',
+    category: 'Beverages',
+    unit: 'pack',
+    sellingPrice: 60,
+  },
+  { sku: 'SKU002', name: 'Tissue paper', category: 'Household', unit: 'pack', sellingPrice: 35 },
+  {
+    sku: 'SKU003',
+    name: 'Laundry detergent',
+    category: 'Household',
+    unit: 'bag',
+    sellingPrice: 120,
+  },
+];
+const SEED_REORDER_THRESHOLD = 3;
+
 // Test users from TOR Section 8.1, with the roles from Section 2. Store employees
 // are bound to one store; ADMIN and MANAGER are not store-bound.
 const demoUsers = [
@@ -51,6 +72,21 @@ async function main() {
     });
   }
 
+  for (const product of products) {
+    const row = await prisma.product.upsert({
+      where: { sku: product.sku },
+      update: product,
+      create: product,
+    });
+    for (const storeId of storeIdByCode.values()) {
+      await prisma.productReorderThreshold.upsert({
+        where: { productId_storeId: { productId: row.id, storeId } },
+        update: { threshold: SEED_REORDER_THRESHOLD },
+        create: { productId: row.id, storeId, threshold: SEED_REORDER_THRESHOLD },
+      });
+    }
+  }
+
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   for (const user of demoUsers) {
     const storeId = user.storeCode ? storeIdByCode.get(user.storeCode) : null;
@@ -61,7 +97,7 @@ async function main() {
     });
   }
   console.log(
-    `Seeded ${stores.length} stores, ${suppliers.length} suppliers, and ${demoUsers.length} users (password: "${DEMO_PASSWORD}").`,
+    `Seeded ${stores.length} stores, ${suppliers.length} suppliers, ${products.length} products, and ${demoUsers.length} users (password: "${DEMO_PASSWORD}").`,
   );
 }
 
