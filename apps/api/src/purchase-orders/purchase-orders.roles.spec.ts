@@ -9,7 +9,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { PurchaseOrdersController } from './purchase-orders.controller.js';
 
-type Method = 'list' | 'get' | 'create' | 'update' | 'submit';
+type Method = 'list' | 'get' | 'create' | 'update' | 'submit' | 'approve' | 'reject' | 'cancel';
 
 /** Runs the real `AuthGuard` against one controller method for a signed-in user with this role. */
 async function canCall(role: Role, method: Method): Promise<boolean> {
@@ -54,6 +54,23 @@ describe('PurchaseOrdersController permissions (NFR-01)', () => {
       expect(await canCall('STORE_EMPLOYEE', method)).toBe(false);
     },
   );
+
+  it.each(['approve', 'reject'] as const)(
+    'lets only a manager %s a purchase order',
+    async (method) => {
+      expect(await canCall('MANAGER', method)).toBe(true);
+      expect(await canCall('PURCHASING', method)).toBe(false);
+      expect(await canCall('ADMIN', method)).toBe(false);
+      expect(await canCall('STORE_EMPLOYEE', method)).toBe(false);
+    },
+  );
+
+  it('lets purchasing officers and managers cancel, and the handler narrows purchasing to the creator', async () => {
+    expect(await canCall('PURCHASING', 'cancel')).toBe(true);
+    expect(await canCall('MANAGER', 'cancel')).toBe(true);
+    expect(await canCall('ADMIN', 'cancel')).toBe(false);
+    expect(await canCall('STORE_EMPLOYEE', 'cancel')).toBe(false);
+  });
 
   it.each(['list', 'get'] as const)(
     'lets purchasing, managers and admins %s purchase orders but not store employees',

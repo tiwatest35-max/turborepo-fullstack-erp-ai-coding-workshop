@@ -3,12 +3,20 @@ import * as z from 'zod';
 import { ApiErrorSchema, PaginationInputSchema, paginated } from './conventions.js';
 import { PriceSchema } from './product.js';
 
-/**
- * Where a purchase order is (PO-02). Only the first two exist so far: approval, receiving,
- * rejection and cancellation add theirs with their own tickets.
- */
-export const PurchaseOrderStatusSchema = z.enum(['DRAFT', 'PENDING_APPROVAL']);
+/** Where a purchase order is (PO-02). */
+export const PurchaseOrderStatusSchema = z.enum([
+  'DRAFT',
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'PARTIALLY_RECEIVED',
+  'COMPLETED',
+  'REJECTED',
+  'CANCELLED',
+]);
 export type PurchaseOrderStatus = z.infer<typeof PurchaseOrderStatusSchema>;
+
+/** Why a manager rejects an order, or why an order is cancelled (PO-03, PO-04). Required. */
+export const DecisionReasonSchema = z.string().trim().min(1).max(500);
 
 /** One product line the client sends (PO-01): a whole, positive quantity and a price of 0 or more. */
 export const PurchaseOrderLineInputSchema = z.object({
@@ -78,6 +86,11 @@ export const PurchaseOrderSchema = z.object({
   createdAt: z.iso.datetime(),
   /** Null while the order is a draft. */
   submittedAt: z.iso.datetime().nullable(),
+  /** Who approved, rejected or cancelled the order. Null until then. */
+  decidedByName: z.string().nullable(),
+  decidedAt: z.iso.datetime().nullable(),
+  /** Why it was rejected or cancelled. Null for an approval and until a decision is made. */
+  decisionReason: z.string().nullable(),
   lines: z.array(PurchaseOrderLineSchema),
   /** The sum of the line amounts, to two decimal places (TOR 4.3). */
   totalAmount: z.number().min(0),
@@ -145,5 +158,39 @@ export const purchaseOrderContract = {
     })
     .errors({ NOT_FOUND: { data: ApiErrorSchema }, CONFLICT: { data: ApiErrorSchema } })
     .input(z.object({ id: z.string().min(1) }))
+    .output(PurchaseOrderSchema),
+  approve: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/approve',
+      summary: 'Approve a pending purchase order, which freezes it (manager)',
+      tags: ['Purchase orders'],
+    })
+    .errors({ NOT_FOUND: { data: ApiErrorSchema }, CONFLICT: { data: ApiErrorSchema } })
+    .input(z.object({ id: z.string().min(1) }))
+    .output(PurchaseOrderSchema),
+  reject: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/reject',
+      summary: 'Reject a pending purchase order with a reason (manager)',
+      tags: ['Purchase orders'],
+    })
+    .errors({ NOT_FOUND: { data: ApiErrorSchema }, CONFLICT: { data: ApiErrorSchema } })
+    .input(z.object({ id: z.string().min(1), reason: DecisionReasonSchema }))
+    .output(PurchaseOrderSchema),
+  cancel: oc
+    .route({
+      method: 'POST',
+      path: '/purchase-orders/{id}/cancel',
+      summary: 'Cancel a draft or pending purchase order with a reason (its creator or a manager)',
+      tags: ['Purchase orders'],
+    })
+    .errors({
+      NOT_FOUND: { data: ApiErrorSchema },
+      CONFLICT: { data: ApiErrorSchema },
+      FORBIDDEN: { data: ApiErrorSchema },
+    })
+    .input(z.object({ id: z.string().min(1), reason: DecisionReasonSchema }))
     .output(PurchaseOrderSchema),
 };

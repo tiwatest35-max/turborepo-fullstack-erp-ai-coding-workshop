@@ -1,3 +1,4 @@
+import { auditLogContract } from './audit-log.js';
 import { authContract } from './auth.js';
 import { conventionsContract } from './conventions-route.js';
 import { healthContract } from './health.js';
@@ -7,6 +8,7 @@ import { stockContract } from './stock.js';
 import { storeContract } from './store.js';
 import { supplierContract } from './supplier.js';
 
+export * from './audit-log.js';
 export * from './auth.js';
 export * from './conventions.js';
 export * from './conventions-route.js';
@@ -25,6 +27,7 @@ export * from './supplier.js';
  * Add new feature contracts here, e.g. `customers: customersContract`.
  */
 export const contract = {
+  auditLog: auditLogContract,
   auth: authContract,
   conventions: conventionsContract,
   health: healthContract,

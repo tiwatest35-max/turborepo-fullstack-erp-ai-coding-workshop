@@ -48,7 +48,9 @@ model User {
   updatedAt    DateTime @updatedAt
 
   stockMovements StockMovement[]
-  purchaseOrders PurchaseOrder[]
+  purchaseOrders PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
+  decidedOrders  PurchaseOrder[] @relation("PurchaseOrderDecidedBy")
+  auditLogs      AuditLog[]
 }
 
 model Supplier {
@@ -153,11 +155,23 @@ model DocumentSequence {
   lastValue Int    @default(0)
 }
 
-/// Where a purchase order is in its life (PO-02). Only the first two exist so far; approval,
-/// receiving, rejection and cancellation add theirs with their own tickets.
+/// Where a purchase order is in its life (PO-02). The allowed moves between them are in
+/// the API's purchase-order status table; receiving moves an order on to PARTIALLY_RECEIVED
+/// and COMPLETED with its own ticket.
 enum PurchaseOrderStatus {
   DRAFT
   PENDING_APPROVAL
+  APPROVED
+  PARTIALLY_RECEIVED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+/// What an audited action decided. Later audited actions add their outcomes with their tickets.
+enum AuditOutcome {
+  APPROVED
+  REJECTED
 }
 
 /// A purchase order for one supplier and one destination store (MD-03, PO-01). Creating,
@@ -174,9 +188,15 @@ model PurchaseOrder {
   /// A calendar date, no time of day.
   expectedReceiptDate DateTime            @db.Date
   createdById         String
-  createdBy           User                @relation(fields: [createdById], references: [id])
+  createdBy           User                @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
   /// Null while the order is a draft.
   submittedAt         DateTime?
+  /// Who approved, rejected or cancelled the order, and when (PO-03, PO-04). Null until then.
+  decidedById         String?
+  decidedBy           User?               @relation("PurchaseOrderDecidedBy", fields: [decidedById], references: [id])
+  decidedAt           DateTime?
+  /// Why it was rejected or cancelled. Null for an approval and until a decision is made.
+  decisionReason      String?
   lines               PurchaseOrderLine[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
@@ -204,4 +224,24 @@ model PurchaseOrderLine {
   /// A product appears once per order (PO-01).
   @@unique([purchaseOrderId, productId])
   @@index([productId])
+}
+
+/// One line of the append-only audit log. The migration adds a trigger that rejects UPDATE
+/// and DELETE, so a recorded action cannot be edited or deleted. It holds who did what to which
+/// document and how it turned out, never passwords, tokens or other secrets.
+model AuditLog {
+  id                   String       @id @default(cuid())
+  actorId              String
+  actor                User         @relation(fields: [actorId], references: [id])
+  /// The kind of document acted on, e.g. PURCHASE_ORDER.
+  sourceDocumentType   String
+  /// The document number, e.g. PO-000001.
+  sourceDocumentNumber String
+  outcome              AuditOutcome
+  /// The reason the actor gave. Null when none was asked for.
+  reason               String?
+  createdAt            DateTime     @default(now())
+
+  @@index([createdAt])
+  @@index([sourceDocumentType, sourceDocumentNumber])
 }
