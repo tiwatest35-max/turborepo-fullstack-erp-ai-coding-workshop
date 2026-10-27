@@ -4,12 +4,24 @@ import { Implement, implement } from '@orpc/nest';
 import { Roles } from '../auth/auth.decorators.js';
 import { PrismaService } from '../database/prisma.service.js';
 
-/** True when a Prisma error is a unique-constraint violation (duplicate code). */
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002'
-  );
+/** The Prisma error code, if this is a Prisma known-request error. */
+function prismaCode(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null
+    ? (error as { code?: string }).code
+    : undefined;
 }
+
+/** P2002 = unique-constraint violation (duplicate code). */
+const UNIQUE_VIOLATION = 'P2002';
+/** P2025 = an operation needed a row that does not exist. */
+const RECORD_NOT_FOUND = 'P2025';
+
+const CODE_TAKEN = apiError(
+  'SUPPLIER_CODE_TAKEN',
+  'รหัสผู้จัดจำหน่ายนี้ถูกใช้แล้ว',
+  'correct_input',
+);
+const NOT_FOUND = apiError('SUPPLIER_NOT_FOUND', 'ไม่พบผู้จัดจำหน่ายที่ระบุ', 'correct_input');
 
 @Controller()
 export class SuppliersController {
@@ -43,10 +55,9 @@ export class SuppliersController {
     return implement(contract.suppliers.get).handler(async ({ input, errors }) => {
       try {
         return await this.prisma.supplier.findUniqueOrThrow({ where: { id: input.id } });
-      } catch {
-        throw errors.NOT_FOUND({
-          data: apiError('SUPPLIER_NOT_FOUND', 'ไม่พบผู้จัดจำหน่ายที่ระบุ', 'correct_input'),
-        });
+      } catch (error) {
+        if (prismaCode(error) === RECORD_NOT_FOUND) throw errors.NOT_FOUND({ data: NOT_FOUND });
+        throw error; // a real failure (e.g. DB down) must not read as "not found"
       }
     });
   }
@@ -58,15 +69,7 @@ export class SuppliersController {
       try {
         return await this.prisma.supplier.create({ data: input });
       } catch (error) {
-        if (isUniqueViolation(error)) {
-          throw errors.CONFLICT({
-            data: apiError(
-              'SUPPLIER_CODE_TAKEN',
-              'รหัสผู้จัดจำหน่ายนี้ถูกใช้แล้ว',
-              'correct_input',
-            ),
-          });
-        }
+        if (prismaCode(error) === UNIQUE_VIOLATION) throw errors.CONFLICT({ data: CODE_TAKEN });
         throw error;
       }
     });
@@ -80,18 +83,9 @@ export class SuppliersController {
       try {
         return await this.prisma.supplier.update({ where: { id }, data });
       } catch (error) {
-        if (isUniqueViolation(error)) {
-          throw errors.CONFLICT({
-            data: apiError(
-              'SUPPLIER_CODE_TAKEN',
-              'รหัสผู้จัดจำหน่ายนี้ถูกใช้แล้ว',
-              'correct_input',
-            ),
-          });
-        }
-        throw errors.NOT_FOUND({
-          data: apiError('SUPPLIER_NOT_FOUND', 'ไม่พบผู้จัดจำหน่ายที่ระบุ', 'correct_input'),
-        });
+        if (prismaCode(error) === UNIQUE_VIOLATION) throw errors.CONFLICT({ data: CODE_TAKEN });
+        if (prismaCode(error) === RECORD_NOT_FOUND) throw errors.NOT_FOUND({ data: NOT_FOUND });
+        throw error; // unexpected failures propagate instead of masking as NOT_FOUND
       }
     });
   }

@@ -1,8 +1,13 @@
-import { Test } from '@nestjs/testing';
+import { type ExecutionContext, ForbiddenException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
+import type { User } from '@erp/contracts';
 import { call } from '@orpc/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ROLES_KEY } from '../auth/auth.decorators.js';
+import { describe, expect, it, vi } from 'vitest';
+import type { Env } from '../config/env.js';
+import { AuthGuard } from '../auth/auth.guard.js';
+import { type AuthenticatedRequest } from '../auth/auth.decorators.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { SuppliersController } from './suppliers.controller.js';
 
@@ -38,25 +43,22 @@ async function createController(prisma = prismaMock()) {
 }
 
 describe('SuppliersController', () => {
-  let reflector: Reflector;
-  beforeEach(() => {
-    reflector = new Reflector();
-  });
-
-  it('creates a supplier and returns it', async () => {
+  it('creates a supplier with exactly the input data and returns it', async () => {
     const { controller, prisma } = await createController();
     prisma.supplier.create.mockResolvedValue(sup);
-
-    const result = await call(controller.create(), {
+    const input = {
       code: 'SUP01',
       name: 'SupplyOne Co Ltd',
       contactName: null,
       contactPhone: null,
       contactEmail: null,
-    });
+    };
+
+    const result = await call(controller.create(), input);
 
     expect(result).toMatchObject({ id: 'sup1', code: 'SUP01', name: 'SupplyOne Co Ltd' });
-    expect(prisma.supplier.create).toHaveBeenCalledOnce();
+    // The handler persists exactly the validated input, not a server-assigned id.
+    expect(prisma.supplier.create).toHaveBeenCalledWith({ data: input });
   });
 
   it('rejects a duplicate code with the standard Thai conflict error', async () => {
@@ -72,9 +74,13 @@ describe('SuppliersController', () => {
     }).catch((e) => e);
 
     expect(error.code).toBe('CONFLICT');
-    expect(error.data).toMatchObject({ action: 'correct_input' });
-    expect(error.data.messageTh).toBeTruthy();
-    expect(error.data).not.toHaveProperty('stack');
+    // Only the safe, actionable fields — nothing else leaks (NFR-04).
+    expect(error.data).toEqual({
+      code: 'SUPPLIER_CODE_TAKEN',
+      messageTh: expect.any(String),
+      action: 'correct_input',
+    });
+    expect(error.message).not.toContain('P2002');
   });
 
   it('gets one supplier by id', async () => {
@@ -84,16 +90,43 @@ describe('SuppliersController', () => {
     const result = await call(controller.get(), { id: 'sup1' });
 
     expect(result).toMatchObject({ id: 'sup1', code: 'SUP01' });
+    expect(prisma.supplier.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 'sup1' } });
   });
 
-  it('updates a supplier and returns the new details', async () => {
+  it('returns the standard NOT_FOUND error for a missing supplier', async () => {
+    const { controller, prisma } = await createController();
+    prisma.supplier.findUniqueOrThrow.mockRejectedValue(
+      Object.assign(new Error('not found'), { code: 'P2025' }),
+    );
+
+    const error = await call(controller.get(), { id: 'missing' }).catch((e) => e);
+
+    expect(error.code).toBe('NOT_FOUND');
+    expect(error.data).toMatchObject({ action: 'correct_input' });
+  });
+
+  it('rethrows an unexpected database error instead of masking it as NOT_FOUND', async () => {
+    const { controller, prisma } = await createController();
+    prisma.supplier.findUniqueOrThrow.mockRejectedValue(new Error('connection refused'));
+
+    const error = await call(controller.get(), { id: 'sup1' }).catch((e) => e);
+
+    // A DB outage must not read as "supplier not found, correct your input".
+    expect(error.code).not.toBe('NOT_FOUND');
+  });
+
+  it('updates a supplier with exactly the editable fields and returns the new details', async () => {
     const { controller, prisma } = await createController();
     prisma.supplier.update.mockResolvedValue({ ...sup, contactPhone: '02-999-0000' });
 
     const result = await call(controller.update(), { id: 'sup1', contactPhone: '02-999-0000' });
 
     expect(result.contactPhone).toBe('02-999-0000');
-    expect(prisma.supplier.update).toHaveBeenCalledOnce();
+    // id goes to `where`, never into `data`.
+    expect(prisma.supplier.update).toHaveBeenCalledWith({
+      where: { id: 'sup1' },
+      data: { contactPhone: '02-999-0000' },
+    });
   });
 
   it('lists suppliers newest-first in the shared pagination envelope', async () => {
@@ -115,10 +148,47 @@ describe('SuppliersController', () => {
     );
   });
 
-  it('restricts create and update to ADMIN at the API', () => {
-    // The guard (tested in auth.guard.spec) enforces @Roles; here we assert the
-    // controller declares ADMIN-only on the mutating routes, so a non-admin is 403.
-    expect(reflector.get(ROLES_KEY, SuppliersController.prototype.create)).toEqual(['ADMIN']);
-    expect(reflector.get(ROLES_KEY, SuppliersController.prototype.update)).toEqual(['ADMIN']);
+  it('paginates a middle page with the right skip and hasMore', async () => {
+    const { controller, prisma } = await createController();
+    prisma.supplier.findMany.mockResolvedValue([sup, sup]);
+    prisma.supplier.count.mockResolvedValue(25);
+
+    const result = await call(controller.list(), { page: 2, pageSize: 10 });
+
+    expect(result).toMatchObject({ page: 2, pageSize: 10, total: 25, hasMore: true });
+    expect(prisma.supplier.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 10 }),
+    );
+  });
+
+  it('rejects a non-admin create/update at the guard, enforced on this controller', async () => {
+    // Exercises the real AuthGuard over the actual SuppliersController methods —
+    // proving criterion 3 (API enforcement), not merely that metadata is present.
+    const nonAdmin: User = {
+      id: 'u9',
+      email: 'buyer01@erp.local',
+      name: 'Buyer',
+      role: 'PURCHASING',
+      storeId: null,
+    };
+    const guard = new AuthGuard(
+      new Reflector(),
+      { user: { findUnique: vi.fn().mockResolvedValue(nonAdmin) } } as unknown as PrismaService,
+      { get: () => 'test-secret-that-is-at-least-32-characters' } as unknown as ConfigService<
+        Env,
+        true
+      >,
+    );
+    const context = (method: 'create' | 'update') =>
+      ({
+        switchToHttp: () => ({
+          getRequest: () => ({ headers: {}, user: nonAdmin }) as AuthenticatedRequest,
+        }),
+        getHandler: () => SuppliersController.prototype[method],
+        getClass: () => SuppliersController,
+      }) as unknown as ExecutionContext;
+
+    await expect(guard.canActivate(context('create'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context('update'))).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

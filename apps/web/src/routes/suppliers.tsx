@@ -15,12 +15,16 @@ export function SuppliersPage() {
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
 
   const create = useMutation(
     orpc.suppliers.create.mutationOptions({
       onSuccess: () => {
         setCode('');
         setName('');
+        setContactName('');
+        setContactPhone('');
         void queryClient.invalidateQueries({ queryKey: orpc.suppliers.list.key() });
       },
     }),
@@ -45,8 +49,8 @@ export function SuppliersPage() {
               create.mutate({
                 code,
                 name,
-                contactName: null,
-                contactPhone: null,
+                contactName: contactName || null,
+                contactPhone: contactPhone || null,
                 contactEmail: null,
               });
             }}
@@ -58,6 +62,22 @@ export function SuppliersPage() {
             <div className="space-y-2">
               <Label htmlFor="name">ชื่อ</Label>
               <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contactName">ชื่อผู้ติดต่อ</Label>
+              <Input
+                id="contactName"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contactPhone">โทรศัพท์</Label>
+              <Input
+                id="contactPhone"
+                value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value)}
+              />
             </div>
             {create.error && (
               <p role="alert" className="text-sm text-destructive">
