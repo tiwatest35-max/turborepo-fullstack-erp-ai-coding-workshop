@@ -56,6 +56,55 @@ describe('StockController (real Postgres)', () => {
       ).toEqual({ SKU001: [10, false], SKU002: [5, false], SKU003: [0, true] });
     });
 
+    it('lists only low-stock products in a store when asked for the low-stock report (AC-08)', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+
+      const result = await search(manager, { storeId: b01.id, lowStockOnly: true });
+
+      // SKU003 has 0 in B01, at or below the threshold of 3, so it is listed with its zero balance.
+      expect(result.items.map((i) => [i.sku, i.quantity, i.reorderThreshold, i.lowStock])).toEqual([
+        ['SKU003', 0, 3, true],
+      ]);
+      expect(result).toMatchObject({ total: 1, hasMore: false });
+    });
+
+    it('keeps a zero-stock product in the low-stock report when it matches the search', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+
+      const matching = await search(manager, { storeId: b01.id, lowStockOnly: true, search: 'detergent' });
+      const other = await search(manager, { storeId: b01.id, lowStockOnly: true, search: 'SKU001' });
+
+      expect(matching.items.map((i) => [i.sku, i.quantity])).toEqual([['SKU003', 0]]);
+      expect(other.items).toEqual([]);
+      expect(other.total).toBe(0);
+    });
+
+    it('never calls a product without a reorder threshold low-stock', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      await db.prisma.product.create({
+        data: { sku: 'SKU-NOTHRESH', name: 'No threshold', category: 'x', unit: 'box', sellingPrice: 5 },
+      });
+
+      const result = await search(manager, { search: 'SKU-NOTHRESH', lowStockOnly: true });
+
+      expect(result.items).toEqual([]);
+    });
+
+    it('scopes the low-stock report to a store employee own store (NFR-01)', async () => {
+      const staffB02 = await db.userByEmail('staff_b02@erp.local');
+
+      const result = await search(staffB02, { lowStockOnly: true });
+
+      // B02 has zero of every product against a threshold of 3: all three are low there.
+      expect(result.items.map((i) => [i.storeCode, i.sku]).sort()).toEqual([
+        ['B02', 'SKU001'],
+        ['B02', 'SKU002'],
+        ['B02', 'SKU003'],
+      ]);
+    });
+
     it('flags a quantity exactly equal to the threshold', async () => {
       const manager = await db.userByEmail('manager01@erp.local');
       const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
