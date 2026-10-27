@@ -29,6 +29,8 @@ model Store {
   updatedAt         DateTime                  @updatedAt
   users             User[]
   reorderThresholds ProductReorderThreshold[]
+  stockBalances     StockBalance[]
+  stockMovements    StockMovement[]
 }
 
 model User {
@@ -43,6 +45,8 @@ model User {
   store        Store?   @relation(fields: [storeId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  stockMovements StockMovement[]
 }
 
 model Supplier {
@@ -68,6 +72,8 @@ model Product {
   /// Deactivated products stay in lists and search (MD-02).
   active            Boolean                   @default(true)
   reorderThresholds ProductReorderThreshold[]
+  stockBalances     StockBalance[]
+  stockMovements    StockMovement[]
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
 }
@@ -81,4 +87,63 @@ model ProductReorderThreshold {
   threshold Int
 
   @@id([productId, storeId])
+}
+
+/// Why a product's stock in a store went up or down (INV-02).
+enum StockMovementType {
+  /// The balance a store started with.
+  OPENING
+  RECEIPT
+  SALE
+  ADJUSTMENT
+}
+
+/// The current stock of one product in one store (INV-01). Whole units.
+/// The migration adds CHECK ("quantity" >= 0), so a balance can never go negative (INV-03).
+/// Only StockLedgerService writes it, in the same transaction as the movement that explains it.
+model StockBalance {
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([productId, storeId])
+}
+
+/// One line of the append-only stock ledger (INV-02). The migration adds a trigger that
+/// rejects UPDATE and DELETE, so a confirmed movement cannot be edited or deleted.
+/// A balance equals the sum of its movements (INV-03); the first one is the OPENING balance.
+model StockMovement {
+  id                   String            @id @default(cuid())
+  productId            String
+  product              Product           @relation(fields: [productId], references: [id])
+  /// SKU and name as they were when the movement happened (TOR 4.3).
+  productSku           String
+  productName          String
+  storeId              String
+  store                Store             @relation(fields: [storeId], references: [id])
+  /// Positive for an increase, negative for a decrease. Never zero.
+  quantityChange       Int
+  balanceBefore        Int
+  balanceAfter         Int
+  movementType         StockMovementType
+  /// The kind of document that caused it, e.g. OPENING_BALANCE, GOODS_RECEIPT, SALE.
+  sourceDocumentType   String
+  /// The document number from DocumentSequence. Null for an opening balance.
+  sourceDocumentNumber String?
+  actorId              String
+  actor                User              @relation(fields: [actorId], references: [id])
+  createdAt            DateTime          @default(now())
+
+  @@index([productId, storeId, createdAt])
+  @@index([createdAt])
+}
+
+/// The last number handed out for each document prefix, e.g. GR or SL. DocumentNumberingService
+/// bumps it with one atomic statement, so two documents never share a number.
+model DocumentSequence {
+  prefix    String @id
+  lastValue Int    @default(0)
 }
