@@ -1,0 +1,86 @@
+import { oc } from '@orpc/contract';
+import * as z from 'zod';
+import { ApiErrorSchema, PaginationInputSchema, paginated } from './conventions.js';
+
+/** Why stock went up or down (INV-02). `OPENING` is the balance a store started with. */
+export const StockMovementTypeSchema = z.enum(['OPENING', 'RECEIPT', 'SALE', 'ADJUSTMENT']);
+export type StockMovementType = z.infer<typeof StockMovementTypeSchema>;
+
+/** The stock of one product in one store (INV-01). Whole units, never negative (INV-03). */
+export const StockLevelSchema = z.object({
+  productId: z.string(),
+  sku: z.string(),
+  productName: z.string(),
+  unit: z.string(),
+  storeId: z.string(),
+  storeCode: z.string(),
+  storeName: z.string(),
+  quantity: z.int().min(0),
+  /** Null when the product has no reorder threshold in this store. */
+  reorderThreshold: z.int().min(0).nullable(),
+  /** True when the quantity is at or below the threshold (INV-01). Always false without one. */
+  lowStock: z.boolean(),
+});
+export type StockLevel = z.infer<typeof StockLevelSchema>;
+
+export const SearchStockInputSchema = PaginationInputSchema.extend({
+  /** Matches SKU or product name, case-insensitive. */
+  search: z.string().trim().min(1).optional(),
+  /** Only this store. A store employee can only ask for their own. */
+  storeId: z.string().min(1).optional(),
+});
+export type SearchStockInput = z.infer<typeof SearchStockInputSchema>;
+
+/** One line of the append-only stock ledger (INV-02). There is no way to change one. */
+export const StockMovementSchema = z.object({
+  id: z.string(),
+  productId: z.string(),
+  /** SKU and name as they were when the movement happened. */
+  productSku: z.string(),
+  productName: z.string(),
+  storeId: z.string(),
+  storeCode: z.string(),
+  /** Positive for an increase, negative for a decrease. */
+  quantityChange: z.int().refine((value) => value !== 0),
+  balanceBefore: z.int().min(0),
+  balanceAfter: z.int().min(0),
+  movementType: StockMovementTypeSchema,
+  /** The kind of document behind the movement, e.g. `OPENING_BALANCE`, `GOODS_RECEIPT`. */
+  sourceDocumentType: z.string(),
+  /** Null for an opening balance. */
+  sourceDocumentNumber: z.string().nullable(),
+  actorId: z.string(),
+  actorName: z.string(),
+  createdAt: z.iso.datetime(),
+});
+export type StockMovement = z.infer<typeof StockMovementSchema>;
+
+export const ListStockMovementsInputSchema = PaginationInputSchema.extend({
+  productId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
+});
+export type ListStockMovementsInput = z.infer<typeof ListStockMovementsInputSchema>;
+
+export const stockContract = {
+  search: oc
+    .route({
+      method: 'GET',
+      path: '/stock',
+      summary: 'Search stock by SKU, product name and store',
+      tags: ['Stock'],
+    })
+    .errors({ FORBIDDEN: { data: ApiErrorSchema } })
+    .input(SearchStockInputSchema)
+    .output(paginated(StockLevelSchema)),
+  // Read-only on purpose: confirmed movements cannot be edited or deleted (INV-02).
+  movements: oc
+    .route({
+      method: 'GET',
+      path: '/stock/movements',
+      summary: 'List stock movements, newest first',
+      tags: ['Stock'],
+    })
+    .errors({ FORBIDDEN: { data: ApiErrorSchema } })
+    .input(ListStockMovementsInputSchema)
+    .output(paginated(StockMovementSchema)),
+};
