@@ -57,3 +57,12 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 export function apiError(code: string, messageTh: string, action: ErrorAction): ApiError {
   return { code, messageTh, action };
 }
+
+/**
+ * The key a client sends with a write that must not happen twice (GR-04), e.g. a goods receipt
+ * or a sale. The client makes one up (a UUID is fine) when the user starts the operation and
+ * sends the same key again on every retry or double click. The server answers a repeat with the
+ * first result; a deliberately new operation uses a new key.
+ */
+export const IdempotencyKeySchema = z.string().min(8).max(128);
+export type IdempotencyKey = z.infer<typeof IdempotencyKeySchema>;

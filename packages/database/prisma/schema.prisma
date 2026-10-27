@@ -32,6 +32,7 @@ model Store {
   stockBalances     StockBalance[]
   stockMovements    StockMovement[]
   purchaseOrders    PurchaseOrder[]
+  goodsReceipts     GoodsReceipt[]
 }
 
 model User {
@@ -51,6 +52,7 @@ model User {
   purchaseOrders PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   decidedOrders  PurchaseOrder[] @relation("PurchaseOrderDecidedBy")
   auditLogs      AuditLog[]
+  goodsReceipts  GoodsReceipt[]
 }
 
 model Supplier {
@@ -81,6 +83,7 @@ model Product {
   stockBalances      StockBalance[]
   stockMovements     StockMovement[]
   purchaseOrderLines PurchaseOrderLine[]
+  goodsReceiptLines  GoodsReceiptLine[]
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 }
@@ -198,6 +201,7 @@ model PurchaseOrder {
   /// Why it was rejected or cancelled. Null for an approval and until a decision is made.
   decisionReason      String?
   lines               PurchaseOrderLine[]
+  goodsReceipts       GoodsReceipt[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -220,10 +224,73 @@ model PurchaseOrderLine {
   quantity        Int
   /// The purchase price per unit in THB. The migration adds CHECK ("unitPrice" >= 0).
   unitPrice       Decimal       @db.Decimal(12, 2)
+  /// How much of `quantity` goods receipts have received so far (GR-02). Only goods receipt
+  /// confirmation changes it. The migration adds CHECK (0 <= "receivedQuantity" <= "quantity"),
+  /// so receipts can never exceed what was ordered, however they are written (GR-05).
+  receivedQuantity Int          @default(0)
+  receiptLines    GoodsReceiptLine[]
 
   /// A product appears once per order (PO-01).
   @@unique([purchaseOrderId, productId])
   @@index([productId])
+}
+
+/// One confirmed delivery against an approved purchase order (GR-03). There is no draft state:
+/// a receipt exists because it was confirmed. The migration adds a trigger that rejects UPDATE
+/// and DELETE, so a confirmed receipt cannot be edited or cancelled (GR-05).
+model GoodsReceipt {
+  id              String             @id @default(cuid())
+  /// From DocumentNumberingService, e.g. GR-000001. Unique (TOR 4.3).
+  number          String             @unique
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id])
+  /// The order's destination store, copied so the receipt stands on its own.
+  storeId         String
+  store           Store              @relation(fields: [storeId], references: [id])
+  receivedById    String
+  receivedBy      User               @relation(fields: [receivedById], references: [id])
+  /// The system confirmation time. The client cannot set it (Q-03: no backdating).
+  receivedAt      DateTime           @default(now())
+  lines           GoodsReceiptLine[]
+
+  @@index([purchaseOrderId])
+  @@index([storeId, receivedAt])
+}
+
+/// One product on a goods receipt. Only lines with a quantity above zero are saved.
+/// SKU, name and unit are copied from the purchase order line (TOR 4.3).
+model GoodsReceiptLine {
+  id                  String            @id @default(cuid())
+  goodsReceiptId      String
+  goodsReceipt        GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id])
+  purchaseOrderLineId String
+  purchaseOrderLine   PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id])
+  productId           String
+  product             Product           @relation(fields: [productId], references: [id])
+  sku                 String
+  productName         String
+  unit                String
+  /// Whole units received in this delivery. The migration adds CHECK ("quantity" > 0).
+  quantity            Int
+
+  @@index([goodsReceiptId])
+  @@index([purchaseOrderLineId])
+}
+
+/// A client-supplied key that makes one write safe to repeat (GR-04). Sending the same key with
+/// the same request returns the first result instead of doing the work again; a new key is a
+/// new operation. IdempotencyService is the only writer.
+model IdempotencyKey {
+  /// What the key was used for, e.g. GOODS_RECEIPT. The same key may be used for different operations.
+  operation   String
+  key         String
+  /// A hash of who asked and what they asked for, so a key reused for a different request is caught.
+  requestHash String
+  /// The id of the document the first request produced. Null only inside that request's transaction.
+  resultId    String?
+  createdAt   DateTime @default(now())
+
+  @@id([operation, key])
 }
 
 /// One line of the append-only audit log. The migration adds a trigger that rejects UPDATE

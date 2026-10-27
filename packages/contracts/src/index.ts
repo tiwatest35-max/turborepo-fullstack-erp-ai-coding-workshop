@@ -1,6 +1,7 @@
 import { auditLogContract } from './audit-log.js';
 import { authContract } from './auth.js';
 import { conventionsContract } from './conventions-route.js';
+import { goodsReceiptContract } from './goods-receipt.js';
 import { healthContract } from './health.js';
 import { productContract } from './product.js';
 import { purchaseOrderContract } from './purchase-order.js';
@@ -12,6 +13,7 @@ export * from './audit-log.js';
 export * from './auth.js';
 export * from './conventions.js';
 export * from './conventions-route.js';
+export * from './goods-receipt.js';
 export * from './health.js';
 export * from './product.js';
 export * from './purchase-order.js';
@@ -30,6 +32,7 @@ export const contract = {
   auditLog: auditLogContract,
   auth: authContract,
   conventions: conventionsContract,
+  goodsReceipts: goodsReceiptContract,
   health: healthContract,
   products: productContract,
   purchaseOrders: purchaseOrderContract,
