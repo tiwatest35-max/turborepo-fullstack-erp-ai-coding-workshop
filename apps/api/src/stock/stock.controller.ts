@@ -56,6 +56,10 @@ export class StockController {
         conditions.push(Prisma.sql`(p."sku" ILIKE ${pattern} OR p."name" ILIKE ${pattern})`);
       }
       if (storeId) conditions.push(Prisma.sql`s."id" = ${storeId}`);
+      // Low stock needs a threshold; a missing balance row counts as 0 so zero stock is kept.
+      if (input.lowStockOnly) {
+        conditions.push(Prisma.sql`COALESCE(b."quantity", 0) <= t."threshold"`);
+      }
       const where = Prisma.join(conditions, ' AND ');
       const from = Prisma.sql`
         FROM "Product" p

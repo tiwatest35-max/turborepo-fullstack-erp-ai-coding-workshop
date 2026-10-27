@@ -28,6 +28,9 @@ export const SearchStockInputSchema = PaginationInputSchema.extend({
   search: z.string().trim().min(1).optional(),
   /** Only this store. A store employee can only ask for their own. */
   storeId: z.string().min(1).optional(),
+  /** The low-stock report (RPT-02): only rows at or below their reorder threshold. */
+  // A GET query string carries "true"/"false", so accept those as well as a real boolean.
+  lowStockOnly: z.union([z.boolean(), z.stringbool()]).optional(),
 });
 export type SearchStockInput = z.infer<typeof SearchStockInputSchema>;
 

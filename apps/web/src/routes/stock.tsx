@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { StockMovementType } from '@erp/contracts';
-import { Badge } from '@/components/ui/badge';
+import { StockLevelList } from '@/components/stock-level-list';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -91,29 +91,7 @@ export function StockPage() {
           ) : stock.data.items.length === 0 ? (
             <p className="text-muted-foreground">ไม่พบสต็อกที่ตรงกับการค้นหา</p>
           ) : (
-            <ul className="divide-y">
-              {stock.data.items.map((level) => (
-                <li
-                  key={`${level.productId}:${level.storeId}`}
-                  className="flex items-center justify-between py-2"
-                >
-                  <span className="flex items-center gap-3">
-                    <span className="font-medium">{level.productName}</span>
-                    <span className="text-muted-foreground">{level.sku}</span>
-                    <span className="text-muted-foreground">{level.storeCode}</span>
-                  </span>
-                  <span className="flex items-center gap-3">
-                    <span>{`คงเหลือ ${level.quantity} ${level.unit}`}</span>
-                    <span className="text-muted-foreground">
-                      {level.reorderThreshold === null
-                        ? 'ไม่ได้ตั้งจุดสั่งซื้อ'
-                        : `จุดสั่งซื้อ ${level.reorderThreshold}`}
-                    </span>
-                    {level.lowStock && <Badge variant="destructive">สต็อกต่ำ</Badge>}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <StockLevelList levels={stock.data.items} />
           )}
         </CardContent>
       </Card>

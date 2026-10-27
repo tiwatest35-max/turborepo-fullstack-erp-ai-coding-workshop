@@ -60,6 +60,14 @@ describe('stock schemas', () => {
     expect(SearchStockInputSchema.safeParse({ search: '   ' }).success).toBe(false);
   });
 
+  it('reads the low-stock filter from a query string or a boolean', () => {
+    expect(SearchStockInputSchema.parse({ lowStockOnly: 'true' }).lowStockOnly).toBe(true);
+    expect(SearchStockInputSchema.parse({ lowStockOnly: 'false' }).lowStockOnly).toBe(false);
+    expect(SearchStockInputSchema.parse({ lowStockOnly: true }).lowStockOnly).toBe(true);
+    expect(SearchStockInputSchema.parse({}).lowStockOnly).toBeUndefined();
+    expect(SearchStockInputSchema.safeParse({ lowStockOnly: 'maybe' }).success).toBe(false);
+  });
+
   it('accepts a movement with balances that cannot be negative', () => {
     expect(StockMovementSchema.safeParse(movement).success).toBe(true);
     expect(StockMovementSchema.safeParse({ ...movement, balanceAfter: -1 }).success).toBe(false);
