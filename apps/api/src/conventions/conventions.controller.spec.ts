@@ -55,22 +55,13 @@ describe('ConventionsController', () => {
     expect(error.data).not.toHaveProperty('stack');
   });
 
-  it('rejects an out-of-range pageSize at the contract boundary', async () => {
+  it('rejects an out-of-range pageSize with an input-validation error', async () => {
     const controller = await createController();
 
-    await expect(call(controller.list(), { page: 1, pageSize: 0 })).rejects.toBeDefined();
-  });
-
-  it('coerces numeric query strings so GET pagination works over HTTP', async () => {
-    const controller = await createController();
-
-    // Query-string values arrive as strings; the schema must coerce them.
-    const result = await call(controller.list(), {
-      page: '2',
-      pageSize: '5',
-    } as unknown as { page: number; pageSize: number });
-
-    expect(result).toMatchObject({ page: 2, pageSize: 5 });
-    expect(result.items).toHaveLength(5);
+    // Assert the kind of failure, not merely that something threw: the contract's
+    // input validation rejects pageSize 0 before the handler runs.
+    await expect(call(controller.list(), { page: 1, pageSize: 0 })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
   });
 });

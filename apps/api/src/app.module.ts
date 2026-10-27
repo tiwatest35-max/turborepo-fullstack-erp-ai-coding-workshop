@@ -19,7 +19,9 @@ import { OpenApiModule } from './openapi/openapi.module.js';
     ORPCModule.forRoot({}),
     DatabaseModule,
     AuthModule,
-    ConventionsModule,
+    // The reference conventions route is a demonstration only; never expose it
+    // (or its OpenAPI entry) in production. Removed once a real list route exists.
+    ...(process.env.NODE_ENV === 'production' ? [] : [ConventionsModule]),
     HealthModule,
     OpenApiModule,
   ],

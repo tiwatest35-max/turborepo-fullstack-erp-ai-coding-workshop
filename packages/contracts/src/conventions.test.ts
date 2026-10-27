@@ -31,6 +31,18 @@ describe('PaginationInputSchema', () => {
   it('rejects a pageSize below 1', () => {
     expect(PaginationInputSchema.safeParse({ pageSize: 0 }).success).toBe(false);
   });
+
+  it('coerces numeric query strings, since list routes are GET', () => {
+    // Over HTTP, query params arrive as strings; the schema coerces them to numbers.
+    expect(PaginationInputSchema.parse({ page: '2', pageSize: '5' })).toEqual({
+      page: 2,
+      pageSize: 5,
+    });
+  });
+
+  it('still rejects a non-numeric string', () => {
+    expect(PaginationInputSchema.safeParse({ page: 'abc' }).success).toBe(false);
+  });
 });
 
 describe('paginated', () => {
