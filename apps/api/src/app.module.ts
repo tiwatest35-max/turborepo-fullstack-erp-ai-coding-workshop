@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ORPCModule } from '@orpc/nest';
+import { AuditLogModule } from './audit-log/audit-log.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { validateEnv } from './config/env.js';
 import { ConventionsModule } from './conventions/conventions.module.js';
@@ -23,6 +24,7 @@ import { SuppliersModule } from './suppliers/suppliers.module.js';
     }),
     ORPCModule.forRoot({}),
     DatabaseModule,
+    AuditLogModule,
     AuthModule,
     // The reference conventions route is a demonstration only; never expose it
     // (or its OpenAPI entry) in production. Removed once a real list route exists.

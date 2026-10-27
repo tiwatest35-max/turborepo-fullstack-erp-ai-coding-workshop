@@ -5,13 +5,16 @@ import {
   type ApiError,
   type PurchaseOrder,
   type PurchaseOrderInput,
+  type PurchaseOrderStatus,
   type User,
 } from '@erp/contracts';
 import { Prisma } from '@erp/database';
 import { Implement, implement } from '@orpc/nest';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { DocumentNumberingService } from '../stock/document-numbering.service.js';
+import { statusesBefore } from './purchase-order-status.js';
 
 /** The Prisma error code, if this is a Prisma known-request error. */
 function prismaCode(error: unknown): string | undefined {
@@ -26,10 +29,23 @@ const RECORD_NOT_FOUND = 'P2025';
 /** Purchase orders are numbered PO-000001, PO-000002, ... (TOR 4.3). */
 const NUMBER_PREFIX = 'PO';
 
+/** What the audit log calls a purchase order. */
+const AUDIT_DOCUMENT_TYPE = 'PURCHASE_ORDER';
+
 const NOT_FOUND = apiError('PO_NOT_FOUND', 'ไม่พบใบสั่งซื้อที่ระบุ', 'correct_input');
 const NOT_DRAFT = apiError(
   'PO_NOT_DRAFT',
   'แก้ไขหรือส่งอนุมัติได้เฉพาะใบสั่งซื้อที่ยังเป็นฉบับร่าง',
+  'correct_input',
+);
+const INVALID_TRANSITION = apiError(
+  'PO_INVALID_TRANSITION',
+  'ใบสั่งซื้อนี้อยู่ในสถานะที่ทำรายการนี้ไม่ได้',
+  'correct_input',
+);
+const CANCEL_FORBIDDEN = apiError(
+  'PO_CANCEL_FORBIDDEN',
+  'ยกเลิกได้เฉพาะผู้สร้างใบสั่งซื้อหรือผู้จัดการ',
   'correct_input',
 );
 const SUPPLIER_UNKNOWN = apiError(
@@ -51,6 +67,7 @@ const WITH_DETAILS = {
   supplier: { select: { code: true, name: true } },
   store: { select: { code: true, name: true } },
   createdBy: { select: { name: true } },
+  decidedBy: { select: { name: true } },
   lines: { orderBy: { id: 'asc' } },
 } satisfies Prisma.PurchaseOrderInclude;
 
@@ -92,6 +109,9 @@ function toPurchaseOrder(row: OrderRow): PurchaseOrder {
     createdByName: row.createdBy.name,
     createdAt: row.createdAt.toISOString(),
     submittedAt: row.submittedAt?.toISOString() ?? null,
+    decidedByName: row.decidedBy?.name ?? null,
+    decidedAt: row.decidedAt?.toISOString() ?? null,
+    decisionReason: row.decisionReason,
     lines: lines.map(({ lineSatang: _lineSatang, ...line }) => line),
     totalAmount: totalSatang / 100,
   };
@@ -100,12 +120,47 @@ function toPurchaseOrder(row: OrderRow): PurchaseOrder {
 /** A typed `errors.BAD_REQUEST` from the handler. */
 type BadRequest = (options: { data: ApiError }) => Error;
 
+/** The typed `errors.NOT_FOUND` and `errors.CONFLICT` from a handler that moves an order. */
+type MoveErrors = Record<'NOT_FOUND' | 'CONFLICT', (options: { data: ApiError }) => Error>;
+
 @Controller()
 export class PurchaseOrdersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly numbering: DocumentNumberingService,
+    private readonly audit: AuditLogService,
   ) {}
+
+  /**
+   * Moves an order to `to` if the status table allows it from where the order is now, records
+   * who decided and why, and returns it. The check and the write are one statement, so two
+   * requests racing for the same order cannot both win. Runs inside the caller's transaction.
+   */
+  private async decide(
+    tx: Prisma.TransactionClient,
+    options: { id: string; to: PurchaseOrderStatus; actor: User; reason?: string },
+    errors: MoveErrors,
+  ): Promise<PurchaseOrder> {
+    const { id, to, actor, reason } = options;
+    const moved = await tx.purchaseOrder.updateMany({
+      where: { id, status: { in: statusesBefore(to) } },
+      data: {
+        status: to,
+        decidedById: actor.id,
+        decidedAt: new Date(),
+        decisionReason: reason ?? null,
+      },
+    });
+    if (moved.count === 0) {
+      const exists = await tx.purchaseOrder.count({ where: { id } });
+      throw exists === 0
+        ? errors.NOT_FOUND({ data: NOT_FOUND })
+        : errors.CONFLICT({ data: INVALID_TRANSITION });
+    }
+
+    const row = await tx.purchaseOrder.findUniqueOrThrow({ where: { id }, include: WITH_DETAILS });
+    return toPurchaseOrder(row);
+  }
 
   /**
    * Checks a draft's contents against the master data and copies each product's SKU, name and
@@ -260,7 +315,7 @@ export class PurchaseOrdersController {
       this.prisma.$transaction(async (tx) => {
         // Only a draft moves on, and only once, even when two requests race.
         const moved = await tx.purchaseOrder.updateMany({
-          where: { id: input.id, status: 'DRAFT' },
+          where: { id: input.id, status: { in: statusesBefore('PENDING_APPROVAL') } },
           data: { status: 'PENDING_APPROVAL', submittedAt: new Date() },
         });
         if (moved.count === 0) {
@@ -275,6 +330,70 @@ export class PurchaseOrdersController {
           include: WITH_DETAILS,
         });
         return toPurchaseOrder(row);
+      }),
+    );
+  }
+
+  /** Any one manager can approve (Q-01). Approving freezes the order and never touches stock (PO-02). */
+  @Roles('MANAGER')
+  @Implement(contract.purchaseOrders.approve)
+  approve(@CurrentUser() user: User) {
+    return implement(contract.purchaseOrders.approve).handler(({ input, errors }) =>
+      this.prisma.$transaction(async (tx) => {
+        const order = await this.decide(tx, { id: input.id, to: 'APPROVED', actor: user }, errors);
+        await this.audit.record(tx, {
+          actorId: user.id,
+          sourceDocumentType: AUDIT_DOCUMENT_TYPE,
+          sourceDocumentNumber: order.number,
+          outcome: 'APPROVED',
+        });
+        return order;
+      }),
+    );
+  }
+
+  @Roles('MANAGER')
+  @Implement(contract.purchaseOrders.reject)
+  reject(@CurrentUser() user: User) {
+    return implement(contract.purchaseOrders.reject).handler(({ input, errors }) =>
+      this.prisma.$transaction(async (tx) => {
+        const order = await this.decide(
+          tx,
+          { id: input.id, to: 'REJECTED', actor: user, reason: input.reason },
+          errors,
+        );
+        await this.audit.record(tx, {
+          actorId: user.id,
+          sourceDocumentType: AUDIT_DOCUMENT_TYPE,
+          sourceDocumentNumber: order.number,
+          outcome: 'REJECTED',
+          reason: input.reason,
+        });
+        return order;
+      }),
+    );
+  }
+
+  /** The creator or a manager, on a Draft or Pending Approval order only (PO-04). */
+  @Roles('PURCHASING', 'MANAGER')
+  @Implement(contract.purchaseOrders.cancel)
+  cancel(@CurrentUser() user: User) {
+    return implement(contract.purchaseOrders.cancel).handler(({ input, errors }) =>
+      this.prisma.$transaction(async (tx) => {
+        const existing = await tx.purchaseOrder.findUnique({
+          where: { id: input.id },
+          select: { createdById: true },
+        });
+        if (!existing) throw errors.NOT_FOUND({ data: NOT_FOUND });
+        if (user.role !== 'MANAGER' && existing.createdById !== user.id) {
+          throw errors.FORBIDDEN({ data: CANCEL_FORBIDDEN });
+        }
+
+        return this.decide(
+          tx,
+          { id: input.id, to: 'CANCELLED', actor: user, reason: input.reason },
+          errors,
+        );
       }),
     );
   }
