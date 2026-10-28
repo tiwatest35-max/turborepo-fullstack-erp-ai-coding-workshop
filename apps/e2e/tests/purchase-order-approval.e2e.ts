@@ -64,7 +64,13 @@ test.describe('purchase order approval', () => {
 
     await page.goto('/purchase-orders');
     await expect(page.getByRole('heading', { name: 'ใบสั่งซื้อ', level: 1 })).toBeVisible();
-    const orderRow = (order: Order) => page.getByRole('listitem').filter({ hasText: order.number });
+    // Scope to the purchase-order list: the audit log below is also a list of listitems that
+    // mention the same order numbers and reason, so matching the whole page is ambiguous.
+    // Match the number exactly too: a plain substring would also catch PO-0000040 for PO-000004.
+    const exactNumber = (number: string) => new RegExp(`${number}(?!\\d)`);
+    const orderList = page.getByRole('list', { name: 'รายการใบสั่งซื้อ' });
+    const orderRow = (order: Order) =>
+      orderList.getByRole('listitem').filter({ hasText: exactNumber(order.number) });
 
     // Approve: Approved, and nothing is left to do to it.
     const approving = orderRow(toApprove);
@@ -99,11 +105,13 @@ test.describe('purchase order approval', () => {
 
     // The audit log on the page: one row for each, and none for the refused attempt.
     const audit = page.getByRole('list', { name: 'บันทึกการตรวจสอบ' });
-    await expect(audit.getByRole('listitem').filter({ hasText: toApprove.number })).toHaveCount(1);
+    await expect(
+      audit.getByRole('listitem').filter({ hasText: exactNumber(toApprove.number) }),
+    ).toHaveCount(1);
     await expect(
       audit
         .getByRole('listitem')
-        .filter({ hasText: toReject.number })
+        .filter({ hasText: exactNumber(toReject.number) })
         .getByText('เหตุผล: ราคาสูงกว่าใบเสนอราคา'),
     ).toBeVisible();
   });
