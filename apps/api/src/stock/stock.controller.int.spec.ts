@@ -398,6 +398,39 @@ describe('StockController (real Postgres)', () => {
       );
     });
 
+    it('rejects an adjustment with a blank reason through the route, changing nothing', async () => {
+      const [productId, storeId] = [await skuId('SKU001'), await b01Id()];
+
+      const error = await call((await controller()).adjust(await manager()), {
+        productId,
+        storeId,
+        quantityChange: 5,
+        reason: '   ',
+      } as never).catch((e: unknown) => e);
+
+      expect(error).toBeDefined();
+      expect(await b01Stock()).toBe(10);
+      expect(await db.prisma.stockMovement.count({ where: { movementType: 'ADJUSTMENT' } })).toBe(
+        0,
+      );
+    });
+
+    it('rejects an unknown product with BAD_REQUEST, not a 500', async () => {
+      const storeId = await b01Id();
+
+      const error = await adjust(await manager(), {
+        productId: 'does-not-exist',
+        storeId,
+        quantityChange: 5,
+        reason: 'ทดสอบ',
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'BAD_REQUEST',
+        data: { code: 'ADJUSTMENT_UNKNOWN_TARGET' },
+      });
+    });
+
     it('a non-manager cannot adjust stock, enforced at the API', async () => {
       const staff = await db.userByEmail('staff_b01@erp.local');
       const { AuthGuard } = await import('../auth/auth.guard.js');

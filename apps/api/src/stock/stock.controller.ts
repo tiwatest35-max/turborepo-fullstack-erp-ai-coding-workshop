@@ -22,6 +22,11 @@ const ADJUSTMENT_TOO_LARGE = apiError(
   'ลดสต็อกเกินจำนวนคงเหลือไม่ได้ โปรดตรวจสอบจำนวนแล้วลองอีกครั้ง',
   'correct_input',
 );
+const ADJUSTMENT_UNKNOWN_TARGET = apiError(
+  'ADJUSTMENT_UNKNOWN_TARGET',
+  'ไม่พบสินค้าหรือสาขาที่ระบุ',
+  'correct_input',
+);
 
 /**
  * Which store a request may look at (NFR-01). A store-bound user (one with a `storeId`) only
@@ -161,6 +166,16 @@ export class StockController {
   adjust(@CurrentUser() user: User) {
     return implement(contract.stock.adjust).handler(({ input, errors }) =>
       this.prisma.$transaction(async (tx) => {
+        // Reject an unknown product or store as a client error, not a 500 (the ledger would
+        // otherwise throw a raw not-found / foreign-key error).
+        const [targetProduct, targetStore] = await Promise.all([
+          tx.product.findUnique({ where: { id: input.productId }, select: { id: true } }),
+          tx.store.findUnique({ where: { id: input.storeId }, select: { id: true } }),
+        ]);
+        if (!targetProduct || !targetStore) {
+          throw errors.BAD_REQUEST({ data: ADJUSTMENT_UNKNOWN_TARGET });
+        }
+
         const number = await this.numbering.next(tx, ADJUSTMENT_PREFIX);
 
         // The ledger's atomic guard refuses a decrease that would take the balance below zero;
