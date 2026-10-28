@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Controller } from '@nestjs/common';
 import { apiError, contract, type Sale, type User } from '@erp/contracts';
 import { Prisma } from '@erp/database';
@@ -12,6 +13,9 @@ const NUMBER_PREFIX = 'SL';
 
 /** What the stock movements call a sale. */
 const MOVEMENT_DOCUMENT_TYPE = 'SALE';
+
+/** The idempotency-key namespace for confirming sales (the table is shared with goods receipts). */
+const IDEMPOTENCY_OPERATION = 'SALE';
 
 /** What the queries load so a row can be exposed as a `Sale`. */
 const WITH_DETAILS = {
@@ -55,6 +59,28 @@ function toSale(row: SaleRow): Sale {
   };
 }
 
+const IDEMPOTENCY_REUSED = apiError(
+  'SALE_IDEMPOTENCY_REUSED',
+  'คีย์นี้ถูกใช้กับคำขออื่นแล้ว โปรดใช้คีย์ใหม่สำหรับการขายครั้งใหม่',
+  'correct_input',
+);
+
+type ConfirmInput = {
+  lines: { productId: string; quantity: number }[];
+};
+
+/** A stable fingerprint of who asked and what they asked for, to catch a key reused for a different request. */
+function hashRequest(input: ConfirmInput, userId: string): string {
+  const canonical = JSON.stringify({
+    userId,
+    lines: [...input.lines]
+      // Code-point sort, not locale-dependent, so the hash is stable everywhere.
+      .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+      .map((l) => [l.productId, l.quantity]),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
 type Shortage = { sku: string; available: number; requested: number };
 
 /** One message naming every product that is short, with what the store holds and what was asked (SAL-02). */
@@ -81,6 +107,33 @@ export class SalesController {
     return implement(contract.sales.confirm).handler(({ input, errors }) =>
       this.prisma.$transaction(async (tx) => {
         const storeId = user.storeId!;
+
+        // Idempotency (SAL-03) comes before every other check: a retry of a sale that went
+        // through must replay it, even if stock or the product has changed since. One statement
+        // claims the key. A concurrent request with the same key waits on it until the first
+        // commits, then finds it taken and replays; if the first rolls back, it takes the key.
+        const requestHash = hashRequest(input, user.id);
+        const claimed = await tx.$queryRaw<{ key: string }[]>`
+          INSERT INTO "IdempotencyKey" ("operation", "key", "requestHash")
+          VALUES (${IDEMPOTENCY_OPERATION}, ${input.idempotencyKey}, ${requestHash})
+          ON CONFLICT ("operation", "key") DO NOTHING
+          RETURNING "key"`;
+        if (claimed.length === 0) {
+          const existing = await tx.idempotencyKey.findUniqueOrThrow({
+            where: {
+              operation_key: { operation: IDEMPOTENCY_OPERATION, key: input.idempotencyKey },
+            },
+          });
+          if (existing.requestHash !== requestHash) {
+            throw errors.CONFLICT({ data: IDEMPOTENCY_REUSED });
+          }
+          const prior = await tx.sale.findUniqueOrThrow({
+            where: { id: existing.resultId! },
+            include: WITH_DETAILS,
+          });
+          return toSale(prior);
+        }
+
         const products = await tx.product.findMany({
           where: { id: { in: input.lines.map((line) => line.productId) } },
         });
@@ -123,6 +176,14 @@ export class SalesController {
             },
           },
           include: WITH_DETAILS,
+        });
+
+        // Point the idempotency key at the sale it produced, so a replay returns it.
+        await tx.idempotencyKey.update({
+          where: {
+            operation_key: { operation: IDEMPOTENCY_OPERATION, key: input.idempotencyKey },
+          },
+          data: { resultId: sale.id },
         });
 
         // Always lock balances in the same order, so two sales with the same products listed in a

@@ -139,6 +139,104 @@ describe('SalesController (real Postgres)', () => {
       expect(await stock('SKU002')).toBe(0);
     });
 
+    it('AC-06: repeating the same idempotencyKey returns the first sale and changes nothing (SAL-03)', async () => {
+      const staff = await staffB01();
+      const key = newKey();
+
+      const first = await sell(staff, [['SKU001', 2]], key);
+      const replay = await sell(staff, [['SKU001', 2]], key);
+
+      expect(replay.id).toBe(first.id);
+      expect(replay.number).toBe(first.number);
+      expect(replay.total).toBe(first.total);
+      expect(await saleCount()).toBe(1);
+      expect(await stock('SKU001')).toBe(8);
+      expect(await saleMovements()).toHaveLength(1);
+    });
+
+    it('replays the first sale even when the stock that remains could no longer cover it', async () => {
+      const staff = await staffB01();
+      const key = newKey();
+      const first = await sell(staff, [['SKU001', 10]], key);
+      expect(await stock('SKU001')).toBe(0);
+
+      const replay = await sell(staff, [['SKU001', 10]], key);
+
+      expect(replay.id).toBe(first.id);
+      expect(await saleCount()).toBe(1);
+      expect(await stock('SKU001')).toBe(0);
+    });
+
+    it('a deliberately new key makes a second sale', async () => {
+      const staff = await staffB01();
+
+      const first = await sell(staff, [['SKU001', 2]]);
+      const second = await sell(staff, [['SKU001', 2]]);
+
+      expect(second.id).not.toBe(first.id);
+      expect(second.number).toBe('SL-000002');
+      expect(await saleCount()).toBe(2);
+      expect(await stock('SKU001')).toBe(6);
+    });
+
+    it('rejects the same key reused for a different request, and changes nothing', async () => {
+      const staff = await staffB01();
+      const key = newKey();
+      await sell(staff, [['SKU001', 2]], key);
+
+      const error = await sell(staff, [['SKU001', 3]], key).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'CONFLICT',
+        data: { code: 'SALE_IDEMPOTENCY_REUSED', action: 'correct_input' },
+      });
+      expect(await saleCount()).toBe(1);
+      expect(await stock('SKU001')).toBe(8);
+    });
+
+    it('does not let another user replay a key and read the first user’s sale', async () => {
+      const key = newKey();
+      await sell(await staffB01(), [['SKU001', 2]], key);
+      const staffB02 = await db.userByEmail('staff_b02@erp.local');
+
+      const error = await sell(staffB02, [['SKU001', 2]], key).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'CONFLICT', data: { code: 'SALE_IDEMPOTENCY_REUSED' } });
+      expect(await saleCount()).toBe(1);
+    });
+
+    it('a rejected sale does not use up its key: the same key works once stock allows it', async () => {
+      const staff = await staffB01();
+      const key = newKey();
+      const rejected = await sell(staff, [['SKU003', 1]], key).catch((e: unknown) => e);
+      expect(rejected).toMatchObject({ data: { code: 'SALE_INSUFFICIENT_STOCK' } });
+      await db.prisma.stockBalance.updateMany({
+        where: { product: { sku: 'SKU003' }, store: { code: 'B01' } },
+        data: { quantity: 4 },
+      });
+
+      const sale = await sell(staff, [['SKU003', 1]], key);
+
+      expect(sale.number).toBe('SL-000001');
+      expect(await saleCount()).toBe(1);
+      expect(await stock('SKU003')).toBe(3);
+    });
+
+    it('two concurrent requests with the same key make one sale', async () => {
+      const staff = await staffB01();
+      const key = newKey();
+
+      const results = await Promise.all([
+        sell(staff, [['SKU001', 2]], key),
+        sell(staff, [['SKU001', 2]], key),
+      ]);
+
+      expect(results[0].id).toBe(results[1].id);
+      expect(await saleCount()).toBe(1);
+      expect(await stock('SKU001')).toBe(8);
+      expect(await saleMovements()).toHaveLength(1);
+    });
+
     it('sells from the latest balance, not an earlier one', async () => {
       const staff = await staffB01();
       await sell(staff, [['SKU001', 7]]);
