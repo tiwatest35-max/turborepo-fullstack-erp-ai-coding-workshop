@@ -17,7 +17,10 @@ const TRANSITIONS: Record<PurchaseOrderStatus, readonly PurchaseOrderStatus[]> =
 };
 
 /** The statuses a goods receipt can be confirmed against (GR-01). */
-export const RECEIVABLE_STATUSES: readonly PurchaseOrderStatus[] = ['APPROVED', 'PARTIALLY_RECEIVED'];
+export const RECEIVABLE_STATUSES: readonly PurchaseOrderStatus[] = [
+  'APPROVED',
+  'PARTIALLY_RECEIVED',
+];
 
 /** Every status an order can be in right before it moves to `to`. */
 export function statusesBefore(to: PurchaseOrderStatus): PurchaseOrderStatus[] {
