@@ -1,0 +1,291 @@
+import { createHash } from 'node:crypto';
+import { Controller } from '@nestjs/common';
+import { apiError, contract, type Sale, type User } from '@erp/contracts';
+import { Prisma } from '@erp/database';
+import { Implement, implement } from '@orpc/nest';
+import { CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { PrismaService } from '../database/prisma.service.js';
+import { DocumentNumberingService } from '../stock/document-numbering.service.js';
+import { InsufficientStockError, StockLedgerService } from '../stock/stock-ledger.service.js';
+
+/** Sales are numbered SL-000001, SL-000002, ... (TOR 4.3). */
+const NUMBER_PREFIX = 'SL';
+
+/** What the stock movements call a sale. */
+const MOVEMENT_DOCUMENT_TYPE = 'SALE';
+
+/** The idempotency-key namespace for confirming sales (the table is shared with goods receipts). */
+const IDEMPOTENCY_OPERATION = 'SALE';
+
+/** What the queries load so a row can be exposed as a `Sale`. */
+const WITH_DETAILS = {
+  store: { select: { code: true, name: true } },
+  soldBy: { select: { name: true } },
+  lines: { orderBy: { id: 'asc' } },
+} satisfies Prisma.SaleInclude;
+
+type SaleRow = Prisma.SaleGetPayload<{ include: typeof WITH_DETAILS }>;
+
+/** THB amounts are computed in whole satang, so adding them never picks up float noise. */
+const toSatang = (price: { toString(): string }) => Math.round(Number(price.toString()) * 100);
+
+/** Prisma row -> contract shape. */
+function toSale(row: SaleRow): Sale {
+  const lines = row.lines.map((line) => {
+    const lineSatang = toSatang(line.unitPrice) * line.quantity;
+    return {
+      id: line.id,
+      productId: line.productId,
+      sku: line.sku,
+      productName: line.productName,
+      unit: line.unit,
+      quantity: line.quantity,
+      unitPrice: toSatang(line.unitPrice) / 100,
+      lineTotal: lineSatang / 100,
+      lineSatang,
+    };
+  });
+  return {
+    id: row.id,
+    number: row.number,
+    storeId: row.storeId,
+    storeCode: row.store.code,
+    storeName: row.store.name,
+    soldById: row.soldById,
+    soldByName: row.soldBy.name,
+    soldAt: row.soldAt.toISOString(),
+    lines: lines.map(({ lineSatang: _lineSatang, ...line }) => line),
+    total: lines.reduce((sum, line) => sum + line.lineSatang, 0) / 100,
+  };
+}
+
+const IDEMPOTENCY_REUSED = apiError(
+  'SALE_IDEMPOTENCY_REUSED',
+  'คีย์นี้ถูกใช้กับคำขออื่นแล้ว โปรดใช้คีย์ใหม่สำหรับการขายครั้งใหม่',
+  'correct_input',
+);
+const STORE_FORBIDDEN = apiError(
+  'SALE_STORE_FORBIDDEN',
+  'ขายได้เฉพาะสาขาที่ได้รับมอบหมายเท่านั้น',
+  'correct_input',
+);
+const SALE_NOT_FOUND = apiError('SALE_NOT_FOUND', 'ไม่พบรายการขายที่ระบุ', 'correct_input');
+const PRODUCT_NOT_SELLABLE = apiError(
+  'SALE_PRODUCT_NOT_SELLABLE',
+  'มีสินค้าที่ไม่พบหรือถูกปิดใช้งานอยู่ในรายการ ขายได้เฉพาะสินค้าที่เปิดใช้งาน',
+  'correct_input',
+);
+
+type ConfirmInput = {
+  lines: { productId: string; quantity: number }[];
+};
+
+/** A stable fingerprint of who asked and what they asked for, to catch a key reused for a different request. */
+function hashRequest(input: ConfirmInput, userId: string): string {
+  const canonical = JSON.stringify({
+    userId,
+    lines: [...input.lines]
+      // Code-point sort, not locale-dependent, so the hash is stable everywhere.
+      .sort((a, b) => (a.productId < b.productId ? -1 : 1))
+      .map((l) => [l.productId, l.quantity]),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+type Shortage = { sku: string; available: number; requested: number };
+
+/** One message naming every product that is short, with what the store holds and what was asked (SAL-02). */
+const insufficientStock = (shortages: Shortage[]) =>
+  apiError(
+    'SALE_INSUFFICIENT_STOCK',
+    `สต็อกไม่พอสำหรับ ${shortages
+      .map((s) => `${s.sku} (มี ${s.available} ต้องการ ${s.requested})`)
+      .join(', ')} ไม่ได้บันทึกการขาย โปรดลดจำนวนแล้วลองอีกครั้ง`,
+    'correct_input',
+  );
+
+@Controller()
+export class SalesController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: DocumentNumberingService,
+    private readonly ledger: StockLedgerService,
+  ) {}
+
+  @Roles('STORE_EMPLOYEE')
+  @Implement(contract.sales.confirm)
+  confirm(@CurrentUser() user: User) {
+    return implement(contract.sales.confirm).handler(({ input, errors }) =>
+      this.prisma.$transaction(async (tx) => {
+        // A store employee must be bound to a store; no store means no scope, never all stores.
+        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        const storeId = user.storeId;
+
+        // Idempotency (SAL-03) comes before every other check: a retry of a sale that went
+        // through must replay it, even if stock or the product has changed since. One statement
+        // claims the key. A concurrent request with the same key waits on it until the first
+        // commits, then finds it taken and replays; if the first rolls back, it takes the key.
+        const requestHash = hashRequest(input, user.id);
+        const claimed = await tx.$queryRaw<{ key: string }[]>`
+          INSERT INTO "IdempotencyKey" ("operation", "key", "requestHash")
+          VALUES (${IDEMPOTENCY_OPERATION}, ${input.idempotencyKey}, ${requestHash})
+          ON CONFLICT ("operation", "key") DO NOTHING
+          RETURNING "key"`;
+        if (claimed.length === 0) {
+          const existing = await tx.idempotencyKey.findUniqueOrThrow({
+            where: {
+              operation_key: { operation: IDEMPOTENCY_OPERATION, key: input.idempotencyKey },
+            },
+          });
+          if (existing.requestHash !== requestHash) {
+            throw errors.CONFLICT({ data: IDEMPOTENCY_REUSED });
+          }
+          const prior = await tx.sale.findUniqueOrThrow({
+            where: { id: existing.resultId! },
+            include: WITH_DETAILS,
+          });
+          return toSale(prior);
+        }
+
+        const products = await tx.product.findMany({
+          where: { id: { in: input.lines.map((line) => line.productId) } },
+        });
+        const byId = new Map(products.map((product) => [product.id, product]));
+        // Every line must name a known, active product (SAL-01). An unknown or inactive id is a
+        // client error, not a 500.
+        if (input.lines.some((line) => !byId.get(line.productId)?.active)) {
+          throw errors.BAD_REQUEST({ data: PRODUCT_NOT_SELLABLE });
+        }
+
+        // Validate the latest balance of every line before changing anything, so one message can
+        // name every short product (SAL-02). The ledger's guarded update below is what holds
+        // under concurrency: a balance can never go below zero, however two sales interleave.
+        const balances = await tx.stockBalance.findMany({
+          where: { storeId, productId: { in: [...byId.keys()] } },
+        });
+        const onHand = new Map(balances.map((b) => [b.productId, b.quantity]));
+        const shortages = input.lines
+          .map((line) => ({
+            sku: byId.get(line.productId)!.sku,
+            available: onHand.get(line.productId) ?? 0,
+            requested: line.quantity,
+          }))
+          .filter((s) => s.requested > s.available);
+        if (shortages.length > 0) throw errors.CONFLICT({ data: insufficientStock(shortages) });
+
+        const number = await this.numbering.next(tx, NUMBER_PREFIX);
+        const sale = await tx.sale.create({
+          data: {
+            number,
+            storeId,
+            soldById: user.id,
+            lines: {
+              create: input.lines.map((line) => {
+                const product = byId.get(line.productId)!;
+                return {
+                  productId: product.id,
+                  sku: product.sku,
+                  productName: product.name,
+                  unit: product.unit,
+                  quantity: line.quantity,
+                  unitPrice: product.sellingPrice,
+                };
+              }),
+            },
+          },
+          include: WITH_DETAILS,
+        });
+
+        // Point the idempotency key at the sale it produced, so a replay returns it.
+        await tx.idempotencyKey.update({
+          where: {
+            operation_key: { operation: IDEMPOTENCY_OPERATION, key: input.idempotencyKey },
+          },
+          data: { resultId: sale.id },
+        });
+
+        // Always lock balances in the same order, so two sales with the same products listed in a
+        // different order wait for each other instead of deadlocking.
+        const inLockOrder = [...input.lines].sort((a, b) => (a.productId < b.productId ? -1 : 1));
+        for (const line of inLockOrder) {
+          try {
+            await this.ledger.post(tx, {
+              productId: line.productId,
+              storeId,
+              quantityChange: -line.quantity,
+              movementType: 'SALE',
+              sourceDocumentType: MOVEMENT_DOCUMENT_TYPE,
+              sourceDocumentNumber: number,
+              actorId: user.id,
+            });
+          } catch (error) {
+            // Another sale took the stock after the check above. Throwing rolls everything back.
+            if (error instanceof InsufficientStockError) {
+              const shortage = {
+                sku: byId.get(line.productId)!.sku,
+                available: error.available,
+                requested: error.requested,
+              };
+              throw errors.CONFLICT({ data: insufficientStock([shortage]) });
+            }
+            throw error;
+          }
+        }
+        return toSale(sale);
+      }),
+    );
+  }
+
+  @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
+  @Implement(contract.sales.list)
+  list(@CurrentUser() user: User) {
+    return implement(contract.sales.list).handler(async ({ input, errors }) => {
+      const { page, pageSize } = input;
+      // Store employees are pinned to their own store and cannot widen it via input; a store
+      // employee with no store sees nothing. Managers and admins see all, optionally narrowed.
+      let storeId: string | undefined;
+      if (user.role === 'STORE_EMPLOYEE') {
+        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        storeId = user.storeId;
+      } else {
+        storeId = input.storeId;
+      }
+      const where: Prisma.SaleWhereInput = { storeId };
+      const [rows, total] = await Promise.all([
+        this.prisma.sale.findMany({
+          where,
+          orderBy: [{ soldAt: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: WITH_DETAILS,
+        }),
+        this.prisma.sale.count({ where }),
+      ]);
+      const items = rows.map(toSale);
+      return {
+        items,
+        page,
+        pageSize,
+        total,
+        hasMore: (page - 1) * pageSize + items.length < total,
+      };
+    });
+  }
+
+  @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
+  @Implement(contract.sales.get)
+  get(@CurrentUser() user: User) {
+    return implement(contract.sales.get).handler(async ({ input, errors }) => {
+      const row = await this.prisma.sale.findUnique({
+        where: { id: input.id },
+        include: WITH_DETAILS,
+      });
+      if (!row) throw errors.NOT_FOUND({ data: SALE_NOT_FOUND });
+      // A store employee may only read sales for their assigned store.
+      if (user.role === 'STORE_EMPLOYEE' && row.storeId !== user.storeId) {
+        throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+      }
+      return toSale(row);
+    });
+  }
+}
