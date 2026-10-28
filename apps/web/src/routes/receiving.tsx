@@ -8,8 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { orpc } from '@/lib/orpc';
 
-const money = (n: number) => n.toFixed(2);
-
 /** The server's Thai message when it sent one; otherwise a generic receive failure. */
 function errorMessage(error: unknown): string {
   if (error instanceof ORPCError) {
@@ -95,7 +93,7 @@ export function ReceivingPage() {
                   {order.lines.map((line) => (
                     <li
                       key={line.id}
-                      className="grid grid-cols-[2fr_1fr_1fr] items-end gap-3 border-b pb-3 last:border-0"
+                      className="grid grid-cols-[2fr_1fr] items-end gap-3 border-b pb-3 last:border-0"
                     >
                       <div>
                         <p className="font-medium">
@@ -116,9 +114,6 @@ export function ReceivingPage() {
                           value={quantities[line.id] ?? ''}
                           onChange={(e) => setQuantity(line.id, e.target.value)}
                         />
-                      </div>
-                      <div className="text-right text-sm text-muted-foreground">
-                        {money(line.outstanding)} คงเหลือ
                       </div>
                     </li>
                   ))}

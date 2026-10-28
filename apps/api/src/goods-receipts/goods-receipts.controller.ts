@@ -95,7 +95,8 @@ function hashRequest(input: ConfirmInput, userId: string): string {
     userId,
     purchaseOrderId: input.purchaseOrderId,
     lines: [...input.lines]
-      .sort((a, b) => a.purchaseOrderLineId.localeCompare(b.purchaseOrderLineId))
+      // Code-point sort, not locale-dependent, so the hash is stable everywhere.
+      .sort((a, b) => (a.purchaseOrderLineId < b.purchaseOrderLineId ? -1 : 1))
       .map((l) => [l.purchaseOrderLineId, l.quantity]),
   });
   return createHash('sha256').update(canonical).digest('hex');
@@ -133,14 +134,11 @@ export class GoodsReceiptsController {
         // A store employee may only receive for their assigned store (AC-04, NFR-01).
         if (user.storeId !== order.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
 
-        // Only an Approved or Partially Received order can be received against (GR-01).
-        if (!RECEIVABLE_STATUSES.includes(order.status)) {
-          throw errors.CONFLICT({ data: ORDER_NOT_RECEIVABLE });
-        }
-
-        // Idempotency (GR-04): a repeat of the same key returns the first receipt; the same key
-        // reused for a different request is rejected; a new key makes a new receipt. The order's
-        // FOR UPDATE lock above serializes concurrent receipts, so this read-then-claim is safe.
+        // Idempotency (GR-04) is checked BEFORE the status guard: the common lost-response case
+        // is a retry of the delivery that completed the order, whose status is now COMPLETED. That
+        // retry must replay the first receipt, not be refused as not-receivable. A repeat of the
+        // same key returns the first receipt; the same key reused for a different request is
+        // rejected; a new key proceeds. The order's FOR UPDATE lock serializes concurrent receipts.
         const requestHash = hashRequest(input, user.id);
         const existingKey = await tx.idempotencyKey.findUnique({
           where: { operation_key: { operation: IDEMPOTENCY_OPERATION, key: input.idempotencyKey } },
@@ -155,6 +153,11 @@ export class GoodsReceiptsController {
             include: WITH_DETAILS,
           });
           return toGoodsReceipt(prior);
+        }
+
+        // A first-time request may only receive against an Approved or Partially Received order (GR-01).
+        if (!RECEIVABLE_STATUSES.includes(order.status)) {
+          throw errors.CONFLICT({ data: ORDER_NOT_RECEIVABLE });
         }
         await tx.idempotencyKey.create({
           data: { operation: IDEMPOTENCY_OPERATION, key: input.idempotencyKey, requestHash },
@@ -245,10 +248,12 @@ export class GoodsReceiptsController {
   @Roles('STORE_EMPLOYEE')
   @Implement(contract.goodsReceipts.receivable)
   receivable(@CurrentUser() user: User) {
-    return implement(contract.goodsReceipts.receivable).handler(async ({ input }) => {
+    return implement(contract.goodsReceipts.receivable).handler(async ({ input, errors }) => {
+      // A store employee must be bound to a store. No store means no scope, never all stores.
+      if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
       const { page, pageSize } = input;
       const where: Prisma.PurchaseOrderWhereInput = {
-        storeId: user.storeId ?? undefined,
+        storeId: user.storeId,
         status: { in: ['APPROVED', 'PARTIALLY_RECEIVED'] },
       };
       const [orders, total] = await Promise.all([
@@ -300,15 +305,19 @@ export class GoodsReceiptsController {
   @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
   @Implement(contract.goodsReceipts.list)
   list(@CurrentUser() user: User) {
-    return implement(contract.goodsReceipts.list).handler(async ({ input }) => {
+    return implement(contract.goodsReceipts.list).handler(async ({ input, errors }) => {
       const { page, pageSize, purchaseOrderId } = input;
-      // Store employees are confined to their own store; managers and admins see all.
-      const scopedStoreId =
-        user.role === 'STORE_EMPLOYEE' ? (user.storeId ?? undefined) : undefined;
-      const where: Prisma.GoodsReceiptWhereInput = {
-        storeId: scopedStoreId ?? input.storeId,
-        purchaseOrderId,
-      };
+      // Store employees are pinned to their own store and cannot widen it via input; a store
+      // employee with no store is misconfigured and sees nothing. Managers and admins see all,
+      // optionally narrowed by the requested storeId.
+      let storeId: string | undefined;
+      if (user.role === 'STORE_EMPLOYEE') {
+        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        storeId = user.storeId;
+      } else {
+        storeId = input.storeId;
+      }
+      const where: Prisma.GoodsReceiptWhereInput = { storeId, purchaseOrderId };
       const [rows, total] = await Promise.all([
         this.prisma.goodsReceipt.findMany({
           where,

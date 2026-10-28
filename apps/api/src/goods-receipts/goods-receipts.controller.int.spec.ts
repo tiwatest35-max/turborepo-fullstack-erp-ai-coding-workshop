@@ -429,6 +429,28 @@ describe('GoodsReceiptsController (real Postgres)', () => {
       expect(await b01Stock()).toBe(23);
     });
 
+    it('replays the receipt that completed the order, even though its status is now COMPLETED', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const key = newKey();
+      const body = {
+        purchaseOrderId: order.id,
+        idempotencyKey: key,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 20 }],
+      };
+
+      const first = await call((await controller()).confirm(staff), body);
+      expect(await statusOf(order.id)).toBe('COMPLETED');
+
+      // The lost-response case: the order is COMPLETED now, but the same key must replay,
+      // not be refused as not-receivable.
+      const replay = await call((await controller()).confirm(staff), body);
+
+      expect(replay.id).toBe(first.id);
+      expect(await receiptCount()).toBe(1);
+      expect(await b01Stock()).toBe(30);
+    });
+
     it('rejects the same key reused for a different request', async () => {
       const { order, line } = await demoOrder();
       const staff = await staffB01();
@@ -486,6 +508,21 @@ describe('GoodsReceiptsController (real Postgres)', () => {
       const result = await listReceivable(await staffB01());
 
       expect(result.items.find((o) => o.id === order.id)).toBeUndefined();
+    });
+
+    it('refuses a store employee who has no assigned store, rather than showing all stores', async () => {
+      await demoOrder();
+      const unbound: User = {
+        id: 'nostore',
+        email: 'nostore@erp.local',
+        name: 'No Store',
+        role: 'STORE_EMPLOYEE',
+        storeId: null,
+      };
+
+      const error = await listReceivable(unbound).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'FORBIDDEN' });
     });
   });
 
