@@ -42,6 +42,11 @@ test.describe('purchase orders', () => {
     await page.goto('/purchase-orders');
     await expect(page.getByRole('heading', { name: 'ใบสั่งซื้อ', level: 1 })).toBeVisible();
 
+    // Scope alert assertions to the create/edit form. The list card renders its own
+    // alert when its query fails, so `getByRole('alert')` page-wide is ambiguous.
+    const form = page.locator('form');
+    const formAlert = form.getByRole('alert');
+
     // An inactive product is still listed in the picker, marked as such; the API refuses it.
     const optionLabel = (productSku: string) =>
       `${productSku} Workshop item ${productSku}${productSku === inactiveSku ? ' (ปิดใช้งาน)' : ''}`;
@@ -63,18 +68,18 @@ test.describe('purchase orders', () => {
     await page.getByRole('button', { name: 'เพิ่มรายการสินค้า' }).click();
     await fillLine(2, sku, '1', '10');
     await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
-    await expect(page.getByRole('alert')).toContainText('ห้ามซ้ำ');
+    await expect(formAlert).toContainText('ห้ามซ้ำ');
     await page.getByRole('button', { name: 'ลบรายการที่ 2' }).click();
 
     // A negative price is rejected.
     await fillLine(1, sku, '2', '-1');
     await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
-    await expect(page.getByRole('alert')).toContainText('ไม่ติดลบ');
+    await expect(formAlert).toContainText('ไม่ติดลบ');
 
     // An inactive product is rejected, and the message names its SKU.
     await fillLine(1, inactiveSku, '2', '45');
     await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
-    await expect(page.getByRole('alert')).toContainText(inactiveSku);
+    await expect(formAlert).toContainText(inactiveSku);
 
     // Nothing was saved by any of the three.
     await expect(page.getByRole('listitem').filter({ hasText: sku })).toHaveCount(0);
