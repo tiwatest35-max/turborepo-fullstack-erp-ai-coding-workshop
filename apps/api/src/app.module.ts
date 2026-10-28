@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { validateEnv } from './config/env.js';
 import { ConventionsModule } from './conventions/conventions.module.js';
 import { DatabaseModule } from './database/database.module.js';
+import { GoodsReceiptsModule } from './goods-receipts/goods-receipts.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OpenApiModule } from './openapi/openapi.module.js';
 import { ProductsModule } from './products/products.module.js';
@@ -31,6 +32,7 @@ import { SuppliersModule } from './suppliers/suppliers.module.js';
     ...(process.env.NODE_ENV === 'production' ? [] : [ConventionsModule]),
     ProductsModule,
     PurchaseOrdersModule,
+    GoodsReceiptsModule,
     StockModule,
     StoresModule,
     SuppliersModule,
