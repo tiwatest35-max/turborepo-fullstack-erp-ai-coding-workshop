@@ -1,3 +1,4 @@
+import { type StockMovementType, StockMovementTypeSchema } from '@erp/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,8 +21,8 @@ function bangkokDateTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-/** Human labels for each movement type (INV-02). */
-const movementTypeLabels: Record<string, string> = {
+/** Human labels for each movement type (INV-02). Keyed by the contract's StockMovementType. */
+const movementTypeLabels: Record<StockMovementType, string> = {
   OPENING: 'ยอดยกมา',
   RECEIPT: 'รับเข้า',
   SALE: 'ขาย',
@@ -41,6 +42,9 @@ export function MovementReportsPage() {
   const rangeIsValid = from === '' || to === '' || from <= to;
 
   const stores = useQuery(orpc.stores.list.queryOptions({ input: { page: 1, pageSize: 100 } }));
+  const products = useQuery(
+    orpc.products.list.queryOptions({ input: { page: 1, pageSize: 100, status: 'all' } }),
+  );
   const report = useQuery(
     orpc.reports.movements.queryOptions({
       input: {
@@ -48,9 +52,7 @@ export function MovementReportsPage() {
         pageSize: 50,
         ...(productId && { productId }),
         ...(storeId && { storeId }),
-        ...(movementType && {
-          movementType: movementType as 'OPENING' | 'RECEIPT' | 'SALE' | 'ADJUSTMENT',
-        }),
+        ...(movementType && { movementType: movementType as StockMovementType }),
         ...(from && { from }),
         ...(to && { to }),
       },
@@ -76,12 +78,19 @@ export function MovementReportsPage() {
           <div className="flex flex-wrap gap-4">
             <div className="space-y-2">
               <Label htmlFor="product">สินค้า</Label>
-              <Input
+              <select
                 id="product"
-                placeholder="รหัสสินค้า"
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm"
                 value={productId}
                 onChange={(e) => setProductId(e.target.value)}
-              />
+              >
+                <option value="">ทั้งหมด</option>
+                {products.data?.items.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.sku} {product.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="store">สาขา</Label>
@@ -109,10 +118,11 @@ export function MovementReportsPage() {
                 onChange={(e) => setMovementType(e.target.value)}
               >
                 <option value="">ทั้งหมด</option>
-                <option value="OPENING">ยอดยกมา</option>
-                <option value="RECEIPT">รับเข้า</option>
-                <option value="SALE">ขาย</option>
-                <option value="ADJUSTMENT">ปรับปรุง</option>
+                {StockMovementTypeSchema.options.map((type) => (
+                  <option key={type} value={type}>
+                    {movementTypeLabels[type]}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="space-y-2">

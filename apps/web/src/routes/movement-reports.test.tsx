@@ -60,6 +60,7 @@ describe('MovementReportsPage', () => {
     mockApi({
       'GET /auth/me': { user: manager },
       'GET /stores': page([]),
+      'GET /products': page([]),
       'GET /reports/movements': page([movement]),
     });
 
@@ -74,6 +75,7 @@ describe('MovementReportsPage', () => {
     mockApi({
       'GET /auth/me': { user: manager },
       'GET /stores': page([]),
+      'GET /products': page([]),
       'GET /reports/movements': page([]),
     });
 
@@ -86,6 +88,7 @@ describe('MovementReportsPage', () => {
     const fetch = mockApi({
       'GET /auth/me': { user: manager },
       'GET /stores': page([]),
+      'GET /products': page([]),
       'GET /reports/movements': page([movement]),
     });
 

@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { call } from '@orpc/server';
 import { describe, expect, it } from 'vitest';
-import type { User } from '@erp/contracts';
+import type { StockMovementType, User } from '@erp/contracts';
 import { PrismaService } from '../database/prisma.service.js';
 import { useIntegrationDatabase } from '../test/integration.js';
 import { ReportsController } from './reports.controller.js';
@@ -164,7 +164,7 @@ describe('ReportsController (real Postgres)', () => {
       input: {
         productId?: string;
         storeId?: string;
-        movementType?: 'OPENING' | 'RECEIPT' | 'SALE' | 'ADJUSTMENT';
+        movementType?: StockMovementType;
         from?: string;
         to?: string;
       } = {},
@@ -175,7 +175,7 @@ describe('ReportsController (real Postgres)', () => {
       sku: string;
       storeCode: string;
       quantityChange: number;
-      movementType: 'OPENING' | 'RECEIPT' | 'SALE' | 'ADJUSTMENT';
+      movementType: StockMovementType;
       sourceDocumentType: string;
       sourceDocumentNumber?: string | null;
       createdAt: string;
@@ -315,6 +315,15 @@ describe('ReportsController (real Postgres)', () => {
     it('limits a store employee to their own store and lets a manager see all', async () => {
       await seedMovement({
         sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: 4,
+        movementType: 'RECEIPT',
+        sourceDocumentType: 'GOODS_RECEIPT',
+        sourceDocumentNumber: 'GR-B01',
+        createdAt: '2026-10-16T05:00:00.000Z',
+      });
+      await seedMovement({
+        sku: 'SKU001',
         storeCode: 'B02',
         quantityChange: 3,
         movementType: 'RECEIPT',
@@ -326,14 +335,28 @@ describe('ReportsController (real Postgres)', () => {
       const asB01 = await movements(await staffB01());
       const asManager = await movements(await manager());
 
+      const b01Numbers = asB01.items.map((m) => m.sourceDocumentNumber);
+      // The employee sees their own store's movement and not the other store's.
+      expect(b01Numbers).toContain('GR-B01');
+      expect(b01Numbers).not.toContain('GR-B02');
       expect(asB01.items.every((m) => m.storeCode === 'B01')).toBe(true);
-      expect(asManager.items.some((m) => m.storeCode === 'B02')).toBe(true);
+      // The manager sees both stores.
+      const managerNumbers = asManager.items.map((m) => m.sourceDocumentNumber);
+      expect(managerNumbers).toEqual(expect.arrayContaining(['GR-B01', 'GR-B02']));
     });
 
     it('refuses a store employee who asks for another store', async () => {
       const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
 
       const error = await movements(await staffB02(), { storeId: b01.id }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('refuses a store employee who is not assigned to a store (NFR-01)', async () => {
+      const unassigned = { ...(await staffB01()), storeId: null };
+
+      const error = await movements(unassigned).catch((e: unknown) => e);
 
       expect(error).toMatchObject({ code: 'FORBIDDEN' });
     });
