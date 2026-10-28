@@ -85,8 +85,13 @@ describe('stock schemas', () => {
     });
   });
 
-  it('exposes search, movements and the manager adjustment (INV-02, INV-05)', () => {
-    expect(Object.keys(stockContract).sort()).toEqual(['adjust', 'movements', 'search']);
+  it('exposes search, the CSV export, movements and the manager adjustment (INV-02, INV-05, RPT-04)', () => {
+    expect(Object.keys(stockContract).sort()).toEqual([
+      'adjust',
+      'exportCsv',
+      'movements',
+      'search',
+    ]);
   });
 });
 

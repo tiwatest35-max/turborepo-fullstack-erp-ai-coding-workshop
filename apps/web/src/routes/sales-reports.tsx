@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ExportCsvButton } from '@/components/export-csv-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCurrentUser } from '@/lib/auth';
+import { downloadCsv } from '@/lib/download-csv';
 import { orpc } from '@/lib/orpc';
 
 /** Today's date in Asia/Bangkok as `YYYY-MM-DD` (TOR 2: dates are shown in Asia/Bangkok). */
@@ -26,11 +28,12 @@ export function SalesReportsPage() {
   const rangeIsValid = from !== '' && to !== '' && from <= to;
 
   const stores = useQuery(orpc.stores.list.queryOptions({ input: { page: 1, pageSize: 100 } }));
+  const filters = { from, to, ...(storeId && { storeId }) };
   const report = useQuery(
-    orpc.reports.dailySales.queryOptions({
-      input: { from, to, ...(storeId && { storeId }) },
-      enabled: rangeIsValid,
-    }),
+    orpc.reports.dailySales.queryOptions({ input: filters, enabled: rangeIsValid }),
+  );
+  const exportCsv = useMutation(
+    orpc.reports.dailySalesCsv.mutationOptions({ onSuccess: downloadCsv }),
   );
 
   return (
@@ -75,6 +78,13 @@ export function SalesReportsPage() {
               </select>
             </div>
           </div>
+
+          <ExportCsvButton
+            onExport={() => exportCsv.mutate(filters)}
+            pending={exportCsv.isPending}
+            failed={exportCsv.isError}
+            disabled={!rangeIsValid}
+          />
 
           {!rangeIsValid ? (
             <p role="alert" className="text-destructive">

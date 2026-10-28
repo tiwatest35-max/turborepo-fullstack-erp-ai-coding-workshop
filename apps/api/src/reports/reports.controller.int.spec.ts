@@ -161,10 +161,8 @@ describe('ReportsController (real Postgres)', () => {
   describe('dailySalesCsv (RPT-04)', () => {
     const BOM = '\uFEFF';
     const HEADER = 'วันที่,จำนวนเอกสาร,จำนวนชิ้น,ยอดขาย (บาท)';
-    const exportCsv = async (
-      user: User,
-      input: { from: string; to: string; storeId?: string },
-    ) => call((await controller()).dailySalesCsv(user), input);
+    const exportCsv = async (user: User, input: { from: string; to: string; storeId?: string }) =>
+      call((await controller()).dailySalesCsv(user), input);
     const lines = (content: string) => content.slice(BOM.length).split('\r\n').slice(0, -1);
 
     it('is a UTF-8 file with a byte-order mark, the Thai header, one row per day and a total', async () => {

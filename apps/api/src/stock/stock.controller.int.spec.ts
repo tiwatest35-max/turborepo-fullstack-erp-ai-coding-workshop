@@ -77,7 +77,13 @@ describe('StockController (real Postgres)', () => {
     it('keeps Thai product names readable', async () => {
       const manager = await db.userByEmail('manager01@erp.local');
       await db.prisma.product.create({
-        data: { sku: 'SKU-TH', name: 'น้ำดื่มตราช้าง', category: 'x', unit: 'ขวด', sellingPrice: 5 },
+        data: {
+          sku: 'SKU-TH',
+          name: 'น้ำดื่มตราช้าง',
+          category: 'x',
+          unit: 'ขวด',
+          sellingPrice: 5,
+        },
       });
 
       const file = await exportCsv(manager, { search: 'SKU-TH' });
@@ -102,8 +108,8 @@ describe('StockController (real Postgres)', () => {
       expect(rows).toContain("SKU-F1,'+1,box,");
       expect(rows).toContain("SKU-F2,'-1,box,");
       expect(rows).toContain("SKU-F3,'@SUM(A1),box,");
-      expect(rows).toContain("SKU-F4,\"'\t=1\",box,");
-      expect(rows).toContain("SKU-F5,\"'\r=1\",box,");
+      expect(rows).toContain('SKU-F4,"\'\t=1",box,');
+      expect(rows).toContain('SKU-F5,"\'\r=1",box,');
       expect(rows).toContain('SKU-F6,"\'=HYPERLINK(""http://x"",""y"")",box,');
       // No cell is left starting with a formula character.
       expect(rows).not.toMatch(/(^|,|\r\n)"?[=+@]/);
@@ -112,7 +118,13 @@ describe('StockController (real Postgres)', () => {
     it('quotes a name with a comma, a quote or a line break', async () => {
       const manager = await db.userByEmail('manager01@erp.local');
       await db.prisma.product.create({
-        data: { sku: 'SKU-Q', name: 'Chair, "big"\nred', category: 'x', unit: 'box', sellingPrice: 5 },
+        data: {
+          sku: 'SKU-Q',
+          name: 'Chair, "big"\nred',
+          category: 'x',
+          unit: 'box',
+          sellingPrice: 5,
+        },
       });
 
       const file = await exportCsv(manager, { search: 'SKU-Q' });
@@ -127,7 +139,11 @@ describe('StockController (real Postgres)', () => {
       const own = await exportCsv(staffB02, {});
       const other = await exportCsv(staffB02, { storeId: b01.id }).catch((e: unknown) => e);
 
-      expect(lines(own.content).slice(1).every((line) => line.includes(',B02,'))).toBe(true);
+      expect(
+        lines(own.content)
+          .slice(1)
+          .every((line) => line.includes(',B02,')),
+      ).toBe(true);
       expect(lines(own.content)).toHaveLength(4);
       expect(other).toMatchObject({ code: 'FORBIDDEN' });
     });

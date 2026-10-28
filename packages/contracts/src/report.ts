@@ -91,7 +91,8 @@ export const reportContract = {
     .route({
       method: 'GET',
       path: '/reports/sales/daily/export',
-      summary: 'Export the daily sales report as CSV, with the same filters and permissions (RPT-04)',
+      summary:
+        'Export the daily sales report as CSV, with the same filters and permissions (RPT-04)',
       tags: ['Reports'],
     })
     .errors({ FORBIDDEN: { data: ApiErrorSchema } })

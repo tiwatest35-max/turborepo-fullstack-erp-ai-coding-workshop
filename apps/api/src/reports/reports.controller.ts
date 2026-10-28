@@ -114,7 +114,8 @@ export class ReportsController {
       unitsSold: row.unitsSold,
       totalSales: toSatang(row.total) / 100,
     }));
-    const sum = (pick: (row: DayRow) => number) => rows.reduce((total, row) => total + pick(row), 0);
+    const sum = (pick: (row: DayRow) => number) =>
+      rows.reduce((total, row) => total + pick(row), 0);
     return {
       from: input.from,
       to: input.to,
