@@ -1,8 +1,17 @@
 import { Controller } from '@nestjs/common';
-import { apiError, contract, type DailySales, type User } from '@erp/contracts';
+import {
+  apiError,
+  contract,
+  type DailySales,
+  type DailySalesReport,
+  type DailySalesReportInput,
+  type SalesTotals,
+  type User,
+} from '@erp/contracts';
 import { Prisma } from '@erp/database';
 import { Implement, implement } from '@orpc/nest';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { csvExport } from '../csv/csv.js';
 import { PrismaService } from '../database/prisma.service.js';
 
 /** Asia/Bangkok is UTC+7 all year; Thailand has no daylight saving time. */
@@ -25,6 +34,16 @@ const STORE_FORBIDDEN = apiError(
   'correct_input',
 );
 
+/**
+ * The store a sales report covers. A store employee is pinned to their own store and cannot widen
+ * it through the input; one with no store is refused. Managers and admins see every store,
+ * optionally narrowed.
+ */
+function salesStore(user: User, requested: string | undefined): string | undefined | 'FORBIDDEN' {
+  if (user.role !== 'STORE_EMPLOYEE') return requested;
+  return user.storeId ?? 'FORBIDDEN';
+}
+
 /** What one grouped row of the aggregate query holds. `total` is text so it never loses a satang. */
 type DayRow = { date: string; documentCount: number; unitsSold: number; total: string };
 
@@ -40,51 +59,72 @@ export class ReportsController {
   @Implement(contract.reports.dailySales)
   dailySales(@CurrentUser() user: User) {
     return implement(contract.reports.dailySales).handler(async ({ input, errors }) => {
-      const { start, end } = bangkokRange(input.from, input.to);
-
-      // A store employee is pinned to their own store and cannot widen it through the input; one
-      // with no store sees nothing. Managers and admins see every store, optionally narrowed.
-      let storeId: string | undefined;
-      if (user.role === 'STORE_EMPLOYEE') {
-        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
-        storeId = user.storeId;
-      } else {
-        storeId = input.storeId;
-      }
-      const inStore = storeId ? Prisma.sql`AND "s"."storeId" = ${storeId}` : Prisma.empty;
-
-      // "soldAt" is a UTC timestamp without a zone: read it as UTC first, then as Bangkok time.
-      // Every stored sale was confirmed, so there is no status to filter on (drafts are not stored).
-      const rows = await this.prisma.$queryRaw<DayRow[]>`
-        SELECT to_char(("s"."soldAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS "date",
-               COUNT(DISTINCT "s"."id")::int AS "documentCount",
-               SUM("l"."quantity")::int AS "unitsSold",
-               SUM("l"."quantity" * "l"."unitPrice")::text AS "total"
-        FROM "Sale" "s"
-        JOIN "SaleLine" "l" ON "l"."saleId" = "s"."id"
-        WHERE "s"."soldAt" >= ${start} AND "s"."soldAt" < ${end} ${inStore}
-        GROUP BY 1
-        ORDER BY 1 DESC`;
-
-      const days: DailySales[] = rows.map((row) => ({
-        date: row.date,
-        documentCount: row.documentCount,
-        unitsSold: row.unitsSold,
-        totalSales: toSatang(row.total) / 100,
-      }));
-      const sum = (pick: (row: DayRow) => number) =>
-        rows.reduce((total, row) => total + pick(row), 0);
-      return {
-        from: input.from,
-        to: input.to,
-        totals: {
-          documentCount: sum((row) => row.documentCount),
-          unitsSold: sum((row) => row.unitsSold),
-          totalSales: sum((row) => toSatang(row.total)) / 100,
-        },
-        days,
-      };
+      const storeId = salesStore(user, input.storeId);
+      if (storeId === 'FORBIDDEN') throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+      return this.dailySalesReport(input, storeId);
     });
+  }
+
+  /** The daily sales report as a CSV file: the screen's date range, store filter and permission. */
+  @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
+  @Implement(contract.reports.dailySalesCsv)
+  dailySalesCsv(@CurrentUser() user: User) {
+    return implement(contract.reports.dailySalesCsv).handler(async ({ input, errors }) => {
+      const storeId = salesStore(user, input.storeId);
+      if (storeId === 'FORBIDDEN') throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+
+      const { totals, days } = await this.dailySalesReport(input, storeId);
+      const row = (label: string, figures: SalesTotals) => [
+        label,
+        figures.documentCount,
+        figures.unitsSold,
+        figures.totalSales.toFixed(2),
+      ];
+      return csvExport(`sales-daily_${input.from}_${input.to}.csv`, [
+        ['วันที่', 'จำนวนเอกสาร', 'จำนวนชิ้น', 'ยอดขาย (บาท)'],
+        ...days.map((day) => row(day.date, day)),
+        row('รวม', totals),
+      ]);
+    });
+  }
+
+  private async dailySalesReport(
+    input: DailySalesReportInput,
+    storeId: string | undefined,
+  ): Promise<DailySalesReport> {
+    const { start, end } = bangkokRange(input.from, input.to);
+    const inStore = storeId ? Prisma.sql`AND "s"."storeId" = ${storeId}` : Prisma.empty;
+
+    // "soldAt" is a UTC timestamp without a zone: read it as UTC first, then as Bangkok time.
+    // Every stored sale was confirmed, so there is no status to filter on (drafts are not stored).
+    const rows = await this.prisma.$queryRaw<DayRow[]>`
+      SELECT to_char(("s"."soldAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS "date",
+             COUNT(DISTINCT "s"."id")::int AS "documentCount",
+             SUM("l"."quantity")::int AS "unitsSold",
+             SUM("l"."quantity" * "l"."unitPrice")::text AS "total"
+      FROM "Sale" "s"
+      JOIN "SaleLine" "l" ON "l"."saleId" = "s"."id"
+      WHERE "s"."soldAt" >= ${start} AND "s"."soldAt" < ${end} ${inStore}
+      GROUP BY 1
+      ORDER BY 1 DESC`;
+
+    const days: DailySales[] = rows.map((row) => ({
+      date: row.date,
+      documentCount: row.documentCount,
+      unitsSold: row.unitsSold,
+      totalSales: toSatang(row.total) / 100,
+    }));
+    const sum = (pick: (row: DayRow) => number) => rows.reduce((total, row) => total + pick(row), 0);
+    return {
+      from: input.from,
+      to: input.to,
+      totals: {
+        documentCount: sum((row) => row.documentCount),
+        unitsSold: sum((row) => row.unitsSold),
+        totalSales: sum((row) => toSatang(row.total)) / 100,
+      },
+      days,
+    };
   }
 
   /** The movement-history report (RPT-03): the ledger filtered by product, store, type and date. */

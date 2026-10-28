@@ -1,6 +1,11 @@
 import { oc } from '@orpc/contract';
 import * as z from 'zod';
-import { ApiErrorSchema, PaginationInputSchema, paginated } from './conventions.js';
+import {
+  ApiErrorSchema,
+  CsvExportSchema,
+  PaginationInputSchema,
+  paginated,
+} from './conventions.js';
 import { PriceSchema } from './product.js';
 import { StockMovementSchema, StockMovementTypeSchema } from './stock.js';
 
@@ -82,6 +87,16 @@ export const reportContract = {
     .errors({ FORBIDDEN: { data: ApiErrorSchema } })
     .input(DailySalesReportInputSchema)
     .output(DailySalesReportSchema),
+  dailySalesCsv: oc
+    .route({
+      method: 'GET',
+      path: '/reports/sales/daily/export',
+      summary: 'Export the daily sales report as CSV, with the same filters and permissions (RPT-04)',
+      tags: ['Reports'],
+    })
+    .errors({ FORBIDDEN: { data: ApiErrorSchema } })
+    .input(DailySalesReportInputSchema)
+    .output(CsvExportSchema),
   // Read-only: the ledger cannot be edited (INV-02). Each row carries its source-document link.
   movements: oc
     .route({

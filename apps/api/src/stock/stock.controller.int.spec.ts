@@ -31,6 +31,108 @@ describe('StockController (real Postgres)', () => {
   const movements = async (user: Awaited<ReturnType<typeof db.userByEmail>>, input = {}) =>
     call((await controller()).movements(user), { page: 1, pageSize: 20, ...input });
 
+  describe('exportCsv (RPT-04)', () => {
+    const BOM = '\uFEFF';
+    const HEADER = 'SKU,ชื่อสินค้า,หน่วย,รหัสสาขา,ชื่อสาขา,คงเหลือ,จุดสั่งซื้อ,สต็อกต่ำ';
+    const exportCsv = async (user: Awaited<ReturnType<typeof db.userByEmail>>, input = {}) =>
+      call((await controller()).exportCsv(user), input);
+    /** The file's lines after the byte-order mark, header first. */
+    const lines = (content: string) => content.slice(BOM.length).split('\r\n').slice(0, -1);
+
+    it('is a UTF-8 file with a byte-order mark, a header row and the filtered rows', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+
+      const file = await exportCsv(manager, { storeId: b01.id, lowStockOnly: true });
+
+      expect(file.content.startsWith(BOM)).toBe(true);
+      expect(file.filename).toBe('stock-low.csv');
+      expect(lines(file.content)).toEqual([
+        HEADER,
+        'SKU003,Laundry detergent,bag,B01,Central Store,0,3,ใช่',
+      ]);
+    });
+
+    it('applies the same filters as the screen, and is not cut to one page', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+
+      const all = await exportCsv(manager, { storeId: b01.id });
+      const searched = await exportCsv(manager, { storeId: b01.id, search: 'tissue' });
+
+      expect(lines(all.content).map((line) => line.split(',')[0])).toEqual([
+        'SKU',
+        'SKU003',
+        'SKU002',
+        'SKU001',
+      ]);
+      expect(lines(all.content)).toContain('SKU002,Tissue paper,pack,B01,Central Store,5,3,ไม่');
+      expect(lines(searched.content)).toEqual([
+        HEADER,
+        'SKU002,Tissue paper,pack,B01,Central Store,5,3,ไม่',
+      ]);
+      expect(all.filename).toBe('stock-on-hand.csv');
+    });
+
+    it('keeps Thai product names readable', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      await db.prisma.product.create({
+        data: { sku: 'SKU-TH', name: 'น้ำดื่มตราช้าง', category: 'x', unit: 'ขวด', sellingPrice: 5 },
+      });
+
+      const file = await exportCsv(manager, { search: 'SKU-TH' });
+
+      expect(file.content).toContain('SKU-TH,น้ำดื่มตราช้าง,ขวด,B01,Central Store,0,');
+    });
+
+    it('turns a value that starts with a formula character into inert text', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+      const names = ['=1+1', '+1', '-1', '@SUM(A1)', '\t=1', '\r=1', '=HYPERLINK("http://x","y")'];
+      for (const [index, name] of names.entries()) {
+        await db.prisma.product.create({
+          data: { sku: `SKU-F${index}`, name, category: 'x', unit: 'box', sellingPrice: 5 },
+        });
+      }
+
+      const file = await exportCsv(manager, { storeId: b01.id, search: 'SKU-F' });
+
+      const rows = file.content.slice(BOM.length);
+      expect(rows).toContain("SKU-F0,'=1+1,box,");
+      expect(rows).toContain("SKU-F1,'+1,box,");
+      expect(rows).toContain("SKU-F2,'-1,box,");
+      expect(rows).toContain("SKU-F3,'@SUM(A1),box,");
+      expect(rows).toContain("SKU-F4,\"'\t=1\",box,");
+      expect(rows).toContain("SKU-F5,\"'\r=1\",box,");
+      expect(rows).toContain('SKU-F6,"\'=HYPERLINK(""http://x"",""y"")",box,');
+      // No cell is left starting with a formula character.
+      expect(rows).not.toMatch(/(^|,|\r\n)"?[=+@]/);
+    });
+
+    it('quotes a name with a comma, a quote or a line break', async () => {
+      const manager = await db.userByEmail('manager01@erp.local');
+      await db.prisma.product.create({
+        data: { sku: 'SKU-Q', name: 'Chair, "big"\nred', category: 'x', unit: 'box', sellingPrice: 5 },
+      });
+
+      const file = await exportCsv(manager, { search: 'SKU-Q' });
+
+      expect(file.content).toContain('SKU-Q,"Chair, ""big""\nred",box,');
+    });
+
+    it('keeps a store employee to their own store and refuses another (NFR-01)', async () => {
+      const staffB02 = await db.userByEmail('staff_b02@erp.local');
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+
+      const own = await exportCsv(staffB02, {});
+      const other = await exportCsv(staffB02, { storeId: b01.id }).catch((e: unknown) => e);
+
+      expect(lines(own.content).slice(1).every((line) => line.includes(',B02,'))).toBe(true);
+      expect(lines(own.content)).toHaveLength(4);
+      expect(other).toMatchObject({ code: 'FORBIDDEN' });
+    });
+  });
+
   describe('search', () => {
     it('finds a SKU in a store with quantity, unit, threshold and no low-stock flag', async () => {
       const manager = await db.userByEmail('manager01@erp.local');
@@ -313,6 +415,7 @@ describe('StockController (real Postgres)', () => {
       expect(Object.getOwnPropertyNames(Object.getPrototypeOf(instance)).sort()).toEqual([
         'adjust',
         'constructor',
+        'exportCsv',
         'movements',
         'search',
       ]);
