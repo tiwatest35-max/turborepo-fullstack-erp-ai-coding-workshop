@@ -1,0 +1,25 @@
+﻿{
+  "name": "@erp/perf",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "perf": "tsx src/run.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@erp/database": "workspace:*"
+  },
+  "devDependencies": {
+    "@erp/eslint-config": "workspace:*",
+    "@erp/typescript-config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.5"
+  }
+}
