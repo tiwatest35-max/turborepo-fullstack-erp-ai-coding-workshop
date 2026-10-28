@@ -64,6 +64,17 @@ const IDEMPOTENCY_REUSED = apiError(
   'คีย์นี้ถูกใช้กับคำขออื่นแล้ว โปรดใช้คีย์ใหม่สำหรับการขายครั้งใหม่',
   'correct_input',
 );
+const STORE_FORBIDDEN = apiError(
+  'SALE_STORE_FORBIDDEN',
+  'ขายได้เฉพาะสาขาที่ได้รับมอบหมายเท่านั้น',
+  'correct_input',
+);
+const SALE_NOT_FOUND = apiError('SALE_NOT_FOUND', 'ไม่พบรายการขายที่ระบุ', 'correct_input');
+const PRODUCT_NOT_SELLABLE = apiError(
+  'SALE_PRODUCT_NOT_SELLABLE',
+  'มีสินค้าที่ไม่พบหรือถูกปิดใช้งานอยู่ในรายการ ขายได้เฉพาะสินค้าที่เปิดใช้งาน',
+  'correct_input',
+);
 
 type ConfirmInput = {
   lines: { productId: string; quantity: number }[];
@@ -106,7 +117,9 @@ export class SalesController {
   confirm(@CurrentUser() user: User) {
     return implement(contract.sales.confirm).handler(({ input, errors }) =>
       this.prisma.$transaction(async (tx) => {
-        const storeId = user.storeId!;
+        // A store employee must be bound to a store; no store means no scope, never all stores.
+        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        const storeId = user.storeId;
 
         // Idempotency (SAL-03) comes before every other check: a retry of a sale that went
         // through must replay it, even if stock or the product has changed since. One statement
@@ -138,6 +151,11 @@ export class SalesController {
           where: { id: { in: input.lines.map((line) => line.productId) } },
         });
         const byId = new Map(products.map((product) => [product.id, product]));
+        // Every line must name a known, active product (SAL-01). An unknown or inactive id is a
+        // client error, not a 500.
+        if (input.lines.some((line) => !byId.get(line.productId)?.active)) {
+          throw errors.BAD_REQUEST({ data: PRODUCT_NOT_SELLABLE });
+        }
 
         // Validate the latest balance of every line before changing anything, so one message can
         // name every short product (SAL-02). The ledger's guarded update below is what holds
@@ -216,5 +234,58 @@ export class SalesController {
         return toSale(sale);
       }),
     );
+  }
+
+  @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
+  @Implement(contract.sales.list)
+  list(@CurrentUser() user: User) {
+    return implement(contract.sales.list).handler(async ({ input, errors }) => {
+      const { page, pageSize } = input;
+      // Store employees are pinned to their own store and cannot widen it via input; a store
+      // employee with no store sees nothing. Managers and admins see all, optionally narrowed.
+      let storeId: string | undefined;
+      if (user.role === 'STORE_EMPLOYEE') {
+        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        storeId = user.storeId;
+      } else {
+        storeId = input.storeId;
+      }
+      const where: Prisma.SaleWhereInput = { storeId };
+      const [rows, total] = await Promise.all([
+        this.prisma.sale.findMany({
+          where,
+          orderBy: [{ soldAt: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: WITH_DETAILS,
+        }),
+        this.prisma.sale.count({ where }),
+      ]);
+      const items = rows.map(toSale);
+      return {
+        items,
+        page,
+        pageSize,
+        total,
+        hasMore: (page - 1) * pageSize + items.length < total,
+      };
+    });
+  }
+
+  @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
+  @Implement(contract.sales.get)
+  get(@CurrentUser() user: User) {
+    return implement(contract.sales.get).handler(async ({ input, errors }) => {
+      const row = await this.prisma.sale.findUnique({
+        where: { id: input.id },
+        include: WITH_DETAILS,
+      });
+      if (!row) throw errors.NOT_FOUND({ data: SALE_NOT_FOUND });
+      // A store employee may only read sales for their assigned store.
+      if (user.role === 'STORE_EMPLOYEE' && row.storeId !== user.storeId) {
+        throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+      }
+      return toSale(row);
+    });
   }
 }

@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { call } from '@orpc/server';
 import { describe, expect, it } from 'vitest';
-import type { User } from '@erp/contracts';
+import { contract, type User } from '@erp/contracts';
 import { PrismaService } from '../database/prisma.service.js';
 import { DocumentNumberingService } from '../stock/document-numbering.service.js';
 import { StockLedgerService } from '../stock/stock-ledger.service.js';
@@ -246,6 +246,90 @@ describe('SalesController (real Postgres)', () => {
       expect(error).toMatchObject({ code: 'CONFLICT', data: { code: 'SALE_INSUFFICIENT_STOCK' } });
       expect(await stock('SKU001')).toBe(3);
       expect(await saleCount()).toBe(1);
+    });
+
+    it('rejects a line that names an inactive product (SAL-01)', async () => {
+      await db.prisma.product.update({ where: { sku: 'SKU002' }, data: { active: false } });
+
+      const error = await sell(await staffB01(), [['SKU002', 1]]).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'BAD_REQUEST',
+        data: { code: 'SALE_PRODUCT_NOT_SELLABLE' },
+      });
+      expect(await saleCount()).toBe(0);
+    });
+  });
+
+  describe('frozen price (SAL-01)', () => {
+    it('applies the product selling price and keeps it even after the product price changes', async () => {
+      const staff = await staffB01();
+      const sale = await sell(staff, [['SKU001', 2]]); // SKU001 sells at 60.00
+      expect(sale.lines[0]!.unitPrice).toBe(60);
+
+      // Change the product price after the sale; the confirmed sale and its reads keep the old price.
+      await db.prisma.product.update({ where: { sku: 'SKU001' }, data: { sellingPrice: 99 } });
+
+      const got = await call((await controller()).get(staff), { id: sale.id });
+      expect(got.lines[0]!.unitPrice).toBe(60);
+      expect(got.total).toBe(120);
+    });
+  });
+
+  describe('view-only (SAL-04)', () => {
+    it('exposes only confirm, list and get — no edit, cancel or return route', () => {
+      // Enforced by construction: the contract has no mutating route for a confirmed sale.
+      // (contract.sales is validated here so a regression that adds one is caught.)
+      expect(Object.keys((contract as { sales: Record<string, unknown> }).sales).sort()).toEqual([
+        'confirm',
+        'get',
+        'list',
+      ]);
+    });
+
+    it('a confirmed sale cannot be updated or deleted at the database (trigger)', async () => {
+      const sale = await sell(await staffB01(), [['SKU001', 1]]);
+
+      await expect(
+        db.prisma.$executeRawUnsafe(`UPDATE "Sale" SET "number" = 'X' WHERE "id" = '${sale.id}'`),
+      ).rejects.toBeTruthy();
+      await expect(
+        db.prisma.$executeRawUnsafe(`DELETE FROM "Sale" WHERE "id" = '${sale.id}'`),
+      ).rejects.toBeTruthy();
+    });
+  });
+
+  describe('list and get', () => {
+    const staffB02 = () => db.userByEmail('staff_b02@erp.local');
+
+    it('lists sales newest-first, scoped to the store employee’s store', async () => {
+      const staff = await staffB01();
+      await sell(staff, [['SKU001', 1]]);
+
+      const result = await call((await controller()).list(staff), { page: 1, pageSize: 20 });
+
+      expect(result.items.length).toBeGreaterThanOrEqual(1);
+      expect(result.items.every((s) => s.storeCode === 'B01')).toBe(true);
+    });
+
+    it('gets one sale by id', async () => {
+      const staff = await staffB01();
+      const made = await sell(staff, [['SKU001', 1]]);
+
+      const got = await call((await controller()).get(staff), { id: made.id });
+
+      expect(got.id).toBe(made.id);
+      expect(got.number).toBe(made.number);
+    });
+
+    it('refuses a store employee reading another store’s sale', async () => {
+      const made = await sell(await staffB01(), [['SKU001', 1]]);
+
+      const error = await call((await controller()).get(await staffB02()), { id: made.id }).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toMatchObject({ code: 'FORBIDDEN' });
     });
   });
 });
