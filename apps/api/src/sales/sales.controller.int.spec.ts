@@ -94,5 +94,60 @@ describe('SalesController (real Postgres)', () => {
         ]),
       );
     });
+
+    it('AC-05: selling 11 of SKU001 when stock is 10 fails, with no sale and no deduction', async () => {
+      const error = await sell(await staffB01(), [['SKU001', 11]]).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'CONFLICT',
+        data: {
+          code: 'SALE_INSUFFICIENT_STOCK',
+          action: 'correct_input',
+          messageTh: expect.stringContaining('SKU001'),
+        },
+      });
+      expect(await saleCount()).toBe(0);
+      expect(await saleMovements()).toEqual([]);
+      expect(await stock('SKU001')).toBe(10);
+    });
+
+    it('rejects the whole document when one line is short, names every short product, and posts nothing (SAL-02)', async () => {
+      // SKU001 has 10, SKU002 has 5, SKU003 has 0: SKU002 and SKU003 are short.
+      const error = await sell(await staffB01(), [
+        ['SKU001', 2],
+        ['SKU002', 6],
+        ['SKU003', 1],
+      ]).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'CONFLICT', data: { code: 'SALE_INSUFFICIENT_STOCK' } });
+      const { messageTh } = (error as { data: { messageTh: string } }).data;
+      expect(messageTh).toContain('SKU002');
+      expect(messageTh).toContain('SKU003');
+      expect(messageTh).not.toContain('SKU001');
+      expect(await saleCount()).toBe(0);
+      expect(await saleMovements()).toEqual([]);
+      expect(await stock('SKU001')).toBe(10);
+      expect(await stock('SKU002')).toBe(5);
+      expect((await db.prisma.documentSequence.findMany()).map((s) => s.prefix)).not.toContain(
+        'SL',
+      );
+    });
+
+    it('can sell the last unit: stock goes to exactly zero', async () => {
+      await sell(await staffB01(), [['SKU002', 5]]);
+
+      expect(await stock('SKU002')).toBe(0);
+    });
+
+    it('sells from the latest balance, not an earlier one', async () => {
+      const staff = await staffB01();
+      await sell(staff, [['SKU001', 7]]);
+
+      const error = await sell(staff, [['SKU001', 7]]).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'CONFLICT', data: { code: 'SALE_INSUFFICIENT_STOCK' } });
+      expect(await stock('SKU001')).toBe(3);
+      expect(await saleCount()).toBe(1);
+    });
   });
 });
