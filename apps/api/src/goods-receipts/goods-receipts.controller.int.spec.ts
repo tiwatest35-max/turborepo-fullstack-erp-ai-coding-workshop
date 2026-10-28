@@ -390,5 +390,146 @@ describe('GoodsReceiptsController (real Postgres)', () => {
       expect(await b01Stock()).toBe(23);
       expect(await statusOf(order.id)).toBe('PARTIALLY_RECEIVED');
     });
+
+    it('AC-02: repeating the same idempotencyKey returns the first receipt and does not receive twice', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const key = newKey();
+      const body = {
+        purchaseOrderId: order.id,
+        idempotencyKey: key,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      };
+
+      const first = await call((await controller()).confirm(staff), body);
+      const replay = await call((await controller()).confirm(staff), body);
+
+      expect(replay.id).toBe(first.id);
+      expect(replay.number).toBe(first.number);
+      expect(await receiptCount()).toBe(1);
+      expect(await b01Stock()).toBe(18);
+      expect(await receiptMovements()).toHaveLength(1);
+    });
+
+    it('a deliberately new key against the same order makes a second receipt', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+
+      const first = await receive(staff, {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+      const second = await receive(staff, {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 5 }],
+      });
+
+      expect(second.id).not.toBe(first.id);
+      expect(await receiptCount()).toBe(2);
+      expect(await b01Stock()).toBe(23);
+    });
+
+    it('rejects the same key reused for a different request', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const key = newKey();
+      await call((await controller()).confirm(staff), {
+        purchaseOrderId: order.id,
+        idempotencyKey: key,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+
+      const error = await call((await controller()).confirm(staff), {
+        purchaseOrderId: order.id,
+        idempotencyKey: key,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 5 }],
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'CONFLICT', data: { code: 'GR_IDEMPOTENCY_REUSED' } });
+      // Only the first receipt exists; the mismatched replay changed nothing.
+      expect(await receiptCount()).toBe(1);
+      expect(await b01Stock()).toBe(18);
+    });
+  });
+
+  describe('receivable', () => {
+    const listReceivable = async (user: User) =>
+      call((await controller()).receivable(user), { page: 1, pageSize: 20 });
+
+    it("lists the employee's own Approved and Partially Received orders with outstanding quantities", async () => {
+      const { order } = await demoOrder();
+
+      const result = await listReceivable(await staffB01());
+
+      const found = result.items.find((o) => o.id === order.id);
+      expect(found).toBeTruthy();
+      expect(found!.lines[0]).toMatchObject({
+        sku: 'SKU001',
+        ordered: 20,
+        received: 0,
+        outstanding: 20,
+      });
+    });
+
+    it('excludes orders for other stores', async () => {
+      const { order } = await demoOrder();
+
+      const result = await listReceivable(await staffB02());
+
+      expect(result.items.find((o) => o.id === order.id)).toBeUndefined();
+    });
+
+    it('excludes orders that are not receivable (e.g. DRAFT)', async () => {
+      const { order } = await demoOrder();
+      await db.prisma.purchaseOrder.update({ where: { id: order.id }, data: { status: 'DRAFT' } });
+
+      const result = await listReceivable(await staffB01());
+
+      expect(result.items.find((o) => o.id === order.id)).toBeUndefined();
+    });
+  });
+
+  describe('list and get', () => {
+    it('lists receipts newest-first, scoped to the store employee’s store', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      await receive(staff, {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+
+      const result = await call((await controller()).list(staff), { page: 1, pageSize: 20 });
+
+      expect(result.items.length).toBeGreaterThanOrEqual(1);
+      expect(result.items.every((r) => r.storeCode === 'B01')).toBe(true);
+    });
+
+    it('gets one receipt by id', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const made = await receive(staff, {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+
+      const got = await call((await controller()).get(staff), { id: made.id });
+
+      expect(got.id).toBe(made.id);
+      expect(got.number).toBe(made.number);
+    });
+
+    it('refuses a store employee reading another store’s receipt', async () => {
+      const { order, line } = await demoOrder();
+      const made = await receive(await staffB01(), {
+        purchaseOrderId: order.id,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      });
+
+      const error = await call((await controller()).get(await staffB02()), { id: made.id }).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toMatchObject({ code: 'FORBIDDEN' });
+    });
   });
 });
