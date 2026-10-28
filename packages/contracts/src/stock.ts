@@ -64,6 +64,21 @@ export const ListStockMovementsInputSchema = PaginationInputSchema.extend({
 });
 export type ListStockMovementsInput = z.infer<typeof ListStockMovementsInputSchema>;
 
+/**
+ * A manager's stock adjustment (INV-05): increase or decrease the stock of one product in one
+ * store, with a mandatory reason. `quantityChange` is a non-zero whole number (positive to
+ * increase, negative to decrease). The reason is recorded in the audit log.
+ */
+export const AdjustStockInputSchema = z
+  .object({
+    productId: z.string().min(1),
+    storeId: z.string().min(1),
+    quantityChange: z.int().refine((value) => value !== 0, { message: 'A change cannot be zero' }),
+    reason: z.string().trim().min(1),
+  })
+  .strict();
+export type AdjustStockInput = z.infer<typeof AdjustStockInputSchema>;
+
 export const stockContract = {
   search: oc
     .route({
@@ -86,4 +101,14 @@ export const stockContract = {
     .errors({ FORBIDDEN: { data: ApiErrorSchema } })
     .input(ListStockMovementsInputSchema)
     .output(paginated(StockMovementSchema)),
+  adjust: oc
+    .route({
+      method: 'POST',
+      path: '/stock/adjustments',
+      summary: 'Adjust the stock of a product with a mandatory reason (manager only)',
+      tags: ['Stock'],
+    })
+    .errors({ CONFLICT: { data: ApiErrorSchema }, BAD_REQUEST: { data: ApiErrorSchema } })
+    .input(AdjustStockInputSchema)
+    .output(StockMovementSchema),
 };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AdjustStockInputSchema,
   ListStockMovementsInputSchema,
   SearchStockInputSchema,
   StockLevelSchema,
@@ -84,7 +85,36 @@ describe('stock schemas', () => {
     });
   });
 
-  it('exposes no route that changes a movement (INV-02)', () => {
-    expect(Object.keys(stockContract).sort()).toEqual(['movements', 'search']);
+  it('exposes search, movements and the manager adjustment (INV-02, INV-05)', () => {
+    expect(Object.keys(stockContract).sort()).toEqual(['adjust', 'movements', 'search']);
+  });
+});
+
+describe('AdjustStockInputSchema (INV-05)', () => {
+  const valid = {
+    productId: 'p1',
+    storeId: 's1',
+    quantityChange: 5,
+    reason: 'พบของเพิ่มจากการนับสต็อก',
+  };
+
+  it('accepts an increase and a decrease with a reason', () => {
+    expect(AdjustStockInputSchema.safeParse(valid).success).toBe(true);
+    expect(AdjustStockInputSchema.safeParse({ ...valid, quantityChange: -3 }).success).toBe(true);
+  });
+
+  it('rejects a zero change', () => {
+    expect(AdjustStockInputSchema.safeParse({ ...valid, quantityChange: 0 }).success).toBe(false);
+  });
+
+  it('rejects a fractional change', () => {
+    expect(AdjustStockInputSchema.safeParse({ ...valid, quantityChange: 1.5 }).success).toBe(false);
+  });
+
+  it('rejects a missing or empty reason (mandatory, INV-05)', () => {
+    const { reason: _reason, ...noReason } = valid;
+    expect(AdjustStockInputSchema.safeParse(noReason).success).toBe(false);
+    expect(AdjustStockInputSchema.safeParse({ ...valid, reason: '' }).success).toBe(false);
+    expect(AdjustStockInputSchema.safeParse({ ...valid, reason: '   ' }).success).toBe(false);
   });
 });

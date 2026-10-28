@@ -1,8 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { call } from '@orpc/server';
+import type { User } from '@erp/contracts';
 import { describe, expect, it } from 'vitest';
+import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { useIntegrationDatabase } from '../test/integration.js';
+import { DocumentNumberingService } from './document-numbering.service.js';
 import { StockController } from './stock.controller.js';
 import { StockLedgerService } from './stock-ledger.service.js';
 
@@ -13,7 +16,12 @@ describe('StockController (real Postgres)', () => {
   async function controller() {
     const moduleRef = await Test.createTestingModule({
       controllers: [StockController],
-      providers: [{ provide: PrismaService, useValue: db.prisma }],
+      providers: [
+        { provide: PrismaService, useValue: db.prisma },
+        StockLedgerService,
+        DocumentNumberingService,
+        AuditLogService,
+      ],
     }).compile();
     return moduleRef.get(StockController);
   }
@@ -299,14 +307,147 @@ describe('StockController (real Postgres)', () => {
       });
     });
 
-    it('cannot be edited or deleted: the controller offers no write handler', async () => {
+    it('offers no handler that edits or deletes a movement (INV-02); only the manager adjustment writes', async () => {
       const instance = await controller();
 
       expect(Object.getOwnPropertyNames(Object.getPrototypeOf(instance)).sort()).toEqual([
+        'adjust',
         'constructor',
         'movements',
         'search',
       ]);
+    });
+  });
+
+  describe('adjust (INV-05)', () => {
+    const manager = () => db.userByEmail('manager01@erp.local');
+    const skuId = (sku: string) =>
+      db.prisma.product.findUniqueOrThrow({ where: { sku } }).then((p) => p.id);
+    const b01Id = () =>
+      db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } }).then((s) => s.id);
+    const b01Stock = async (sku = 'SKU001') =>
+      (
+        await db.prisma.stockBalance.findFirstOrThrow({
+          where: { product: { sku }, store: { code: 'B01' } },
+        })
+      ).quantity;
+    const adjust = async (
+      user: User,
+      input: { productId: string; storeId: string; quantityChange: number; reason: string },
+    ) => call((await controller()).adjust(user), input);
+
+    it('a manager increase creates an ADJUSTMENT movement with before/after and an audit record with the reason', async () => {
+      const [productId, storeId] = [await skuId('SKU001'), await b01Id()];
+
+      const movement = await adjust(await manager(), {
+        productId,
+        storeId,
+        quantityChange: 5,
+        reason: 'พบของเพิ่มจากการนับสต็อก',
+      });
+
+      expect(movement).toMatchObject({
+        movementType: 'ADJUSTMENT',
+        quantityChange: 5,
+        balanceBefore: 10,
+        balanceAfter: 15,
+        sourceDocumentType: 'STOCK_ADJUSTMENT',
+      });
+      expect(movement.sourceDocumentNumber).toMatch(/^ADJ-/);
+      expect(await b01Stock()).toBe(15);
+      const audit = await db.prisma.auditLog.findFirstOrThrow({
+        where: { sourceDocumentNumber: movement.sourceDocumentNumber! },
+      });
+      expect(audit).toMatchObject({
+        sourceDocumentType: 'STOCK_ADJUSTMENT',
+        reason: 'พบของเพิ่มจากการนับสต็อก',
+      });
+    });
+
+    it('a manager decrease reduces stock and records a negative movement', async () => {
+      const [productId, storeId] = [await skuId('SKU001'), await b01Id()];
+
+      const movement = await adjust(await manager(), {
+        productId,
+        storeId,
+        quantityChange: -4,
+        reason: 'ของเสียหาย',
+      });
+
+      expect(movement).toMatchObject({ quantityChange: -4, balanceBefore: 10, balanceAfter: 6 });
+      expect(await b01Stock()).toBe(6);
+    });
+
+    it('rejects a reduction larger than the available balance and changes nothing', async () => {
+      const [productId, storeId] = [await skuId('SKU001'), await b01Id()];
+
+      const error = await adjust(await manager(), {
+        productId,
+        storeId,
+        quantityChange: -11,
+        reason: 'นับผิด',
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'CONFLICT',
+        data: { code: 'ADJUSTMENT_INSUFFICIENT_STOCK' },
+      });
+      expect(await b01Stock()).toBe(10);
+      expect(await db.prisma.stockMovement.count({ where: { movementType: 'ADJUSTMENT' } })).toBe(
+        0,
+      );
+    });
+
+    it('rejects an adjustment with a blank reason through the route, changing nothing', async () => {
+      const [productId, storeId] = [await skuId('SKU001'), await b01Id()];
+
+      const error = await call((await controller()).adjust(await manager()), {
+        productId,
+        storeId,
+        quantityChange: 5,
+        reason: '   ',
+      } as never).catch((e: unknown) => e);
+
+      expect(error).toBeDefined();
+      expect(await b01Stock()).toBe(10);
+      expect(await db.prisma.stockMovement.count({ where: { movementType: 'ADJUSTMENT' } })).toBe(
+        0,
+      );
+    });
+
+    it('rejects an unknown product with BAD_REQUEST, not a 500', async () => {
+      const storeId = await b01Id();
+
+      const error = await adjust(await manager(), {
+        productId: 'does-not-exist',
+        storeId,
+        quantityChange: 5,
+        reason: 'ทดสอบ',
+      }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({
+        code: 'BAD_REQUEST',
+        data: { code: 'ADJUSTMENT_UNKNOWN_TARGET' },
+      });
+    });
+
+    it('a non-manager cannot adjust stock, enforced at the API', async () => {
+      const staff = await db.userByEmail('staff_b01@erp.local');
+      const { AuthGuard } = await import('../auth/auth.guard.js');
+      const { Reflector } = await import('@nestjs/core');
+      const { ForbiddenException } = await import('@nestjs/common');
+      const guard = new AuthGuard(
+        new Reflector(),
+        { user: { findUnique: async () => staff } } as never,
+        { get: () => 'test-secret-that-is-at-least-32-characters' } as never,
+      );
+      const context = {
+        switchToHttp: () => ({ getRequest: () => ({ headers: {}, user: staff }) }),
+        getHandler: () => StockController.prototype.adjust,
+        getClass: () => StockController,
+      } as never;
+
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });
