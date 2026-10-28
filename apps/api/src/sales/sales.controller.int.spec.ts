@@ -261,6 +261,41 @@ describe('SalesController (real Postgres)', () => {
     });
   });
 
+  /** Seam 2: the database-concurrency seam. A single sequential call cannot express the race. */
+  describe('concurrent sales (INV-04)', () => {
+    it('AC-07: two concurrent sales of 7 against stock 10 make exactly one sale and one rejection, and final stock is 3', async () => {
+      const staff = await staffB01();
+      // Resolve everything the two sales need BEFORE firing them: one shared controller and the
+      // product id. With no per-call setup between them, both confirms enter their transaction
+      // and read the balance of 10 before either commits, so the database guard (the guarded
+      // UPDATE in StockLedgerService), not the handler's pre-check, decides the loser. If the
+      // guard's `quantity + delta >= 0` were removed, both would post and this test would fail.
+      const ctrl = await controller();
+      const sku001 = await productId('SKU001');
+      const fire = (key: string) =>
+        call(ctrl.confirm(staff), {
+          idempotencyKey: key,
+          lines: [{ productId: sku001, quantity: 7 }],
+        });
+
+      const results = await Promise.allSettled([fire(newKey()), fire(newKey())]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+        code: 'CONFLICT',
+        data: { code: 'SALE_INSUFFICIENT_STOCK', action: 'correct_input' },
+      });
+      expect(await stock('SKU001')).toBe(3);
+      expect(await saleCount()).toBe(1);
+      expect(await saleMovements()).toEqual([
+        expect.objectContaining({ quantityChange: -7, balanceBefore: 10, balanceAfter: 3 }),
+      ]);
+    });
+  });
+
   describe('frozen price (SAL-01)', () => {
     it('applies the product selling price and keeps it even after the product price changes', async () => {
       const staff = await staffB01();
