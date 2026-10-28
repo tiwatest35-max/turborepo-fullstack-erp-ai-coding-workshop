@@ -261,6 +261,32 @@ describe('SalesController (real Postgres)', () => {
     });
   });
 
+  /** Seam 2: the database-concurrency seam. A single sequential call cannot express the race. */
+  describe('concurrent sales (INV-04)', () => {
+    it('AC-07: two concurrent sales of 7 against stock 10 make exactly one sale and one rejection, and final stock is 3', async () => {
+      const staff = await staffB01();
+
+      const results = await Promise.allSettled([
+        sell(staff, [['SKU001', 7]]),
+        sell(staff, [['SKU001', 7]]),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+        code: 'CONFLICT',
+        data: { code: 'SALE_INSUFFICIENT_STOCK', action: 'correct_input' },
+      });
+      expect(await stock('SKU001')).toBe(3);
+      expect(await saleCount()).toBe(1);
+      expect(await saleMovements()).toEqual([
+        expect.objectContaining({ quantityChange: -7, balanceBefore: 10, balanceAfter: 3 }),
+      ]);
+    });
+  });
+
   describe('frozen price (SAL-01)', () => {
     it('applies the product selling price and keeps it even after the product price changes', async () => {
       const staff = await staffB01();
