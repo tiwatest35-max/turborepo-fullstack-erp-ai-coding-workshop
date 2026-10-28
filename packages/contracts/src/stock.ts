@@ -1,6 +1,11 @@
 import { oc } from '@orpc/contract';
 import * as z from 'zod';
-import { ApiErrorSchema, PaginationInputSchema, paginated } from './conventions.js';
+import {
+  ApiErrorSchema,
+  CsvExportSchema,
+  PaginationInputSchema,
+  paginated,
+} from './conventions.js';
 
 /** Why stock went up or down (INV-02). `OPENING` is the balance a store started with. */
 export const StockMovementTypeSchema = z.enum(['OPENING', 'RECEIPT', 'SALE', 'ADJUSTMENT']);
@@ -33,6 +38,13 @@ export const SearchStockInputSchema = PaginationInputSchema.extend({
   lowStockOnly: z.union([z.boolean(), z.stringbool()]).optional(),
 });
 export type SearchStockInput = z.infer<typeof SearchStockInputSchema>;
+
+/**
+ * The stock and low-stock report export (RPT-04): the same filters as the screen, without
+ * paging, so the file holds every matching row.
+ */
+export const ExportStockInputSchema = SearchStockInputSchema.omit({ page: true, pageSize: true });
+export type ExportStockInput = z.infer<typeof ExportStockInputSchema>;
 
 /** One line of the append-only stock ledger (INV-02). There is no way to change one. */
 export const StockMovementSchema = z.object({
@@ -90,6 +102,16 @@ export const stockContract = {
     .errors({ FORBIDDEN: { data: ApiErrorSchema } })
     .input(SearchStockInputSchema)
     .output(paginated(StockLevelSchema)),
+  exportCsv: oc
+    .route({
+      method: 'GET',
+      path: '/stock/export',
+      summary: 'Export the stock or low-stock report as CSV, with the same filters (RPT-04)',
+      tags: ['Stock'],
+    })
+    .errors({ FORBIDDEN: { data: ApiErrorSchema } })
+    .input(ExportStockInputSchema)
+    .output(CsvExportSchema),
   // Read-only on purpose: confirmed movements cannot be edited or deleted (INV-02).
   movements: oc
     .route({

@@ -158,6 +158,82 @@ describe('ReportsController (real Postgres)', () => {
     });
   });
 
+  describe('dailySalesCsv (RPT-04)', () => {
+    const BOM = '\uFEFF';
+    const HEADER = 'วันที่,จำนวนเอกสาร,จำนวนชิ้น,ยอดขาย (บาท)';
+    const exportCsv = async (user: User, input: { from: string; to: string; storeId?: string }) =>
+      call((await controller()).dailySalesCsv(user), input);
+    const lines = (content: string) => content.slice(BOM.length).split('\r\n').slice(0, -1);
+
+    it('is a UTF-8 file with a byte-order mark, the Thai header, one row per day and a total', async () => {
+      await seedSale('B01', '2026-10-26T05:00:00Z', [['SKU001', 1]]); // 26th: 60.00
+      await seedSale('B01', '2026-10-28T03:00:00Z', [
+        ['SKU001', 2],
+        ['SKU002', 3],
+      ]); // 28th: 225.00
+      await seedSale('B01', '2026-10-28T09:00:00Z', [['SKU002', 1]]); // 28th: 35.00
+
+      const file = await exportCsv(await manager(), { from: '2026-10-25', to: '2026-10-29' });
+
+      expect(file.content.startsWith(BOM)).toBe(true);
+      expect(file.filename).toBe('sales-daily_2026-10-25_2026-10-29.csv');
+      expect(lines(file.content)).toEqual([
+        HEADER,
+        '2026-10-28,2,6,260.00',
+        '2026-10-26,1,1,60.00',
+        'รวม,3,7,320.00',
+      ]);
+    });
+
+    it('exports zero totals when nothing matches', async () => {
+      const file = await exportCsv(await manager(), { from: '2026-10-28', to: '2026-10-28' });
+
+      expect(lines(file.content)).toEqual([HEADER, 'รวม,0,0,0.00']);
+    });
+
+    it('applies the same store filter as the screen', async () => {
+      await seedSale('B01', '2026-10-28T03:00:00Z', [['SKU001', 2]], 'staff_b01@erp.local'); // 120
+      await seedSale('B02', '2026-10-28T04:00:00Z', [['SKU002', 1]], 'staff_b02@erp.local'); // 35
+      const b02 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B02' } });
+      const range = { from: '2026-10-28', to: '2026-10-28' };
+
+      const all = await exportCsv(await manager(), range);
+      const onlyB02 = await exportCsv(await manager(), { ...range, storeId: b02.id });
+
+      expect(lines(all.content)[1]).toBe('2026-10-28,2,3,155.00');
+      expect(lines(onlyB02.content)[1]).toBe('2026-10-28,1,1,35.00');
+    });
+
+    it('keeps a store employee to their own store, whatever store they ask for (NFR-01)', async () => {
+      await seedSale('B01', '2026-10-28T03:00:00Z', [['SKU001', 2]], 'staff_b01@erp.local'); // 120
+      await seedSale('B02', '2026-10-28T04:00:00Z', [['SKU002', 1]], 'staff_b02@erp.local'); // 35
+      const b02 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B02' } });
+
+      const file = await exportCsv(await db.userByEmail('staff_b01@erp.local'), {
+        from: '2026-10-28',
+        to: '2026-10-28',
+        storeId: b02.id,
+      });
+
+      expect(lines(file.content)).toEqual([HEADER, '2026-10-28,1,2,120.00', 'รวม,1,2,120.00']);
+    });
+
+    it('refuses a store employee who is not assigned to a store, and a backwards range', async () => {
+      const unassigned = { ...(await db.userByEmail('staff_b01@erp.local')), storeId: null };
+
+      const refused = await exportCsv(unassigned, { from: '2026-10-28', to: '2026-10-28' }).catch(
+        (e: unknown) => e,
+      );
+      const backwards = await exportCsv(await manager(), {
+        from: '2026-10-29',
+        to: '2026-10-28',
+      }).catch((e: unknown) => e);
+
+      expect(refused).toMatchObject({ code: 'FORBIDDEN' });
+      expect(backwards).toMatchObject({ code: 'BAD_REQUEST' });
+    });
+  });
+
   describe('movements (RPT-03)', () => {
     const movements = async (
       user: User,

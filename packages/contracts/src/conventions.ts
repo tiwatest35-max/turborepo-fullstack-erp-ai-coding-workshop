@@ -59,6 +59,17 @@ export function apiError(code: string, messageTh: string, action: ErrorAction): 
 }
 
 /**
+ * A CSV file an export route returns (RPT-04). `content` is the whole file as text and starts
+ * with a U+FEFF byte-order mark, so a client that saves it as UTF-8 writes the EF BB BF bytes
+ * spreadsheet software needs to show Thai text correctly. `filename` is the suggested name.
+ */
+export const CsvExportSchema = z.object({
+  filename: z.string().min(1),
+  content: z.string().startsWith('\uFEFF'),
+});
+export type CsvExport = z.infer<typeof CsvExportSchema>;
+
+/**
  * The key a client sends with a write that must not happen twice (GR-04), e.g. a goods receipt
  * or a sale. The client makes one up (a UUID is fine) when the user starts the operation and
  * sends the same key again on every retry or double click. The server answers a repeat with the

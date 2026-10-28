@@ -1,10 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ExportCsvButton } from '@/components/export-csv-button';
 import { StockLevelList } from '@/components/stock-level-list';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCurrentUser } from '@/lib/auth';
+import { downloadCsv } from '@/lib/download-csv';
 import { orpc } from '@/lib/orpc';
 
 type Report = 'ON_HAND' | 'LOW_STOCK';
@@ -25,17 +27,15 @@ export function StockReportsPage() {
   const term = search.trim();
 
   const stores = useQuery(orpc.stores.list.queryOptions({ input: { page: 1, pageSize: 100 } }));
+  const filters = {
+    ...(term && { search: term }),
+    ...(storeId && { storeId }),
+    ...(report === 'LOW_STOCK' && { lowStockOnly: true }),
+  };
   const stock = useQuery(
-    orpc.stock.search.queryOptions({
-      input: {
-        page: 1,
-        pageSize: 100,
-        ...(term && { search: term }),
-        ...(storeId && { storeId }),
-        ...(report === 'LOW_STOCK' && { lowStockOnly: true }),
-      },
-    }),
+    orpc.stock.search.queryOptions({ input: { page: 1, pageSize: 100, ...filters } }),
   );
+  const exportCsv = useMutation(orpc.stock.exportCsv.mutationOptions({ onSuccess: downloadCsv }));
 
   return (
     <div className="space-y-6">
@@ -92,6 +92,12 @@ export function StockReportsPage() {
               </select>
             </div>
           </div>
+
+          <ExportCsvButton
+            onExport={() => exportCsv.mutate(filters)}
+            pending={exportCsv.isPending}
+            failed={exportCsv.isError}
+          />
 
           {stock.isPending ? (
             <p className="text-muted-foreground">กำลังโหลด…</p>

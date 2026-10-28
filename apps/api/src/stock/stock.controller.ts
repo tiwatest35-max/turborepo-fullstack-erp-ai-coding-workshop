@@ -4,6 +4,7 @@ import { Prisma } from '@erp/database';
 import { Implement, implement } from '@orpc/nest';
 import { AuditLogService } from '../audit-log/audit-log.service.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { csvExport } from '../csv/csv.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { DocumentNumberingService } from './document-numbering.service.js';
 import { InsufficientStockError, StockLedgerService } from './stock-ledger.service.js';
@@ -54,6 +55,54 @@ type StockRow = {
   reorderThreshold: number | null;
 };
 
+const isLowStock = (row: StockRow) =>
+  row.reorderThreshold !== null && row.quantity <= row.reorderThreshold;
+
+/**
+ * The rows the stock screen and its CSV export read: every product in every store, with 0 where
+ * no balance row exists yet, so a product that has never been stocked is still found (RPT-02:
+ * zero stock stays visible). Both use this, so the export always matches the screen.
+ */
+function stockFrom(
+  input: { search?: string; lowStockOnly?: boolean },
+  storeId: string | undefined,
+): Prisma.Sql {
+  const conditions = [Prisma.sql`TRUE`];
+  if (input.search) {
+    const pattern = likePattern(input.search);
+    conditions.push(Prisma.sql`(p."sku" ILIKE ${pattern} OR p."name" ILIKE ${pattern})`);
+  }
+  if (storeId) conditions.push(Prisma.sql`s."id" = ${storeId}`);
+  // Low stock needs a threshold; a missing balance row counts as 0 so zero stock is kept.
+  if (input.lowStockOnly) {
+    conditions.push(Prisma.sql`COALESCE(b."quantity", 0) <= t."threshold"`);
+  }
+  return Prisma.sql`
+    FROM "Product" p
+    CROSS JOIN "Store" s
+    LEFT JOIN "StockBalance" b ON b."productId" = p."id" AND b."storeId" = s."id"
+    LEFT JOIN "ProductReorderThreshold" t ON t."productId" = p."id" AND t."storeId" = s."id"
+    WHERE ${Prisma.join(conditions, ' AND ')}`;
+}
+
+const stockSelect = (from: Prisma.Sql) => Prisma.sql`
+  SELECT p."id" AS "productId", p."sku", p."name" AS "productName", p."unit",
+         s."id" AS "storeId", s."code" AS "storeCode", s."name" AS "storeName",
+         COALESCE(b."quantity", 0) AS "quantity", t."threshold" AS "reorderThreshold"
+  ${from}
+  ORDER BY p."createdAt" DESC, p."id" DESC, s."code" ASC`;
+
+const STOCK_CSV_HEADER = [
+  'SKU',
+  'ชื่อสินค้า',
+  'หน่วย',
+  'รหัสสาขา',
+  'ชื่อสาขา',
+  'คงเหลือ',
+  'จุดสั่งซื้อ',
+  'สต็อกต่ำ',
+];
+
 @Controller()
 export class StockController {
   constructor(
@@ -66,52 +115,50 @@ export class StockController {
   @Implement(contract.stock.search)
   search(@CurrentUser() user: User) {
     return implement(contract.stock.search).handler(async ({ input, errors }) => {
-      const { page, pageSize, search } = input;
+      const { page, pageSize } = input;
       const storeId = allowedStore(user, input.storeId);
       if (storeId === 'FORBIDDEN') throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
 
-      // Every product in every store, with 0 where no balance row exists yet, so a product
-      // that has never been stocked is still found (RPT-02: zero stock stays visible).
-      const conditions = [Prisma.sql`TRUE`];
-      if (search) {
-        const pattern = likePattern(search);
-        conditions.push(Prisma.sql`(p."sku" ILIKE ${pattern} OR p."name" ILIKE ${pattern})`);
-      }
-      if (storeId) conditions.push(Prisma.sql`s."id" = ${storeId}`);
-      // Low stock needs a threshold; a missing balance row counts as 0 so zero stock is kept.
-      if (input.lowStockOnly) {
-        conditions.push(Prisma.sql`COALESCE(b."quantity", 0) <= t."threshold"`);
-      }
-      const where = Prisma.join(conditions, ' AND ');
-      const from = Prisma.sql`
-        FROM "Product" p
-        CROSS JOIN "Store" s
-        LEFT JOIN "StockBalance" b ON b."productId" = p."id" AND b."storeId" = s."id"
-        LEFT JOIN "ProductReorderThreshold" t ON t."productId" = p."id" AND t."storeId" = s."id"
-        WHERE ${where}`;
-
+      const from = stockFrom(input, storeId);
       const [rows, counted] = await Promise.all([
         this.prisma.$queryRaw<StockRow[]>`
-          SELECT p."id" AS "productId", p."sku", p."name" AS "productName", p."unit",
-                 s."id" AS "storeId", s."code" AS "storeCode", s."name" AS "storeName",
-                 COALESCE(b."quantity", 0) AS "quantity", t."threshold" AS "reorderThreshold"
-          ${from}
-          ORDER BY p."createdAt" DESC, p."id" DESC, s."code" ASC
+          ${stockSelect(from)}
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
         this.prisma.$queryRaw<{ total: number }[]>`SELECT COUNT(*)::int AS "total" ${from}`,
       ]);
       const total = counted[0]?.total ?? 0;
 
       return {
-        items: rows.map((row) => ({
-          ...row,
-          lowStock: row.reorderThreshold !== null && row.quantity <= row.reorderThreshold,
-        })),
+        items: rows.map((row) => ({ ...row, lowStock: isLowStock(row) })),
         page,
         pageSize,
         total,
         hasMore: (page - 1) * pageSize + rows.length < total,
       };
+    });
+  }
+
+  /** The stock and low-stock report as a CSV file: the screen's filters and store permission. */
+  @Implement(contract.stock.exportCsv)
+  exportCsv(@CurrentUser() user: User) {
+    return implement(contract.stock.exportCsv).handler(async ({ input, errors }) => {
+      const storeId = allowedStore(user, input.storeId);
+      if (storeId === 'FORBIDDEN') throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+
+      const rows = await this.prisma.$queryRaw<StockRow[]>(stockSelect(stockFrom(input, storeId)));
+      return csvExport(input.lowStockOnly ? 'stock-low.csv' : 'stock-on-hand.csv', [
+        STOCK_CSV_HEADER,
+        ...rows.map((row) => [
+          row.sku,
+          row.productName,
+          row.unit,
+          row.storeCode,
+          row.storeName,
+          row.quantity,
+          row.reorderThreshold,
+          isLowStock(row) ? 'ใช่' : 'ไม่',
+        ]),
+      ]);
     });
   }
 

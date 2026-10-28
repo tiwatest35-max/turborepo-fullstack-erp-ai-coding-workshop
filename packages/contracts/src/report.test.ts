@@ -42,6 +42,10 @@ describe('MovementReportInputSchema (RPT-03)', () => {
 
 describe('reportContract', () => {
   it('exposes the daily sales and movement-history reports', () => {
-    expect(Object.keys(reportContract).sort()).toEqual(['dailySales', 'movements']);
+    expect(Object.keys(reportContract).sort()).toEqual([
+      'dailySales',
+      'dailySalesCsv',
+      'movements',
+    ]);
   });
 });
