@@ -53,6 +53,20 @@ const LINE_NOT_ON_ORDER = apiError(
   'รับได้เฉพาะสินค้าที่อยู่ในใบสั่งซื้อนี้ ไม่สามารถเพิ่มสินค้าอื่นได้',
   'correct_input',
 );
+const ORDER_NOT_FOUND = apiError('GR_ORDER_NOT_FOUND', 'ไม่พบใบสั่งซื้อที่ระบุ', 'correct_input');
+const STORE_FORBIDDEN = apiError(
+  'GR_STORE_FORBIDDEN',
+  'รับสินค้าได้เฉพาะสาขาที่ได้รับมอบหมายเท่านั้น',
+  'correct_input',
+);
+const ORDER_NOT_RECEIVABLE = apiError(
+  'GR_ORDER_NOT_RECEIVABLE',
+  'รับสินค้าได้เฉพาะใบสั่งซื้อที่อนุมัติแล้วหรือรับบางส่วนเท่านั้น',
+  'correct_input',
+);
+
+/** Only an Approved or Partially Received order can be received against (GR-01). */
+const RECEIVABLE_STATUSES = ['APPROVED', 'PARTIALLY_RECEIVED'];
 const exceedsOrdered = (sku: string, outstanding: number) =>
   apiError(
     'GR_EXCEEDS_ORDERED',
@@ -76,10 +90,20 @@ export class GoodsReceiptsController {
         // Receipts for one order take turns: a second one waits here until the first commits,
         // so it sees the quantities the first one received (GR-05).
         await tx.$queryRaw`SELECT "id" FROM "PurchaseOrder" WHERE "id" = ${input.purchaseOrderId} FOR UPDATE`;
-        const order = await tx.purchaseOrder.findUniqueOrThrow({
+        const order = await tx.purchaseOrder.findUnique({
           where: { id: input.purchaseOrderId },
           include: { lines: true },
         });
+        // No such order: NOT_FOUND, before any numbering or stock side effect.
+        if (!order) throw errors.NOT_FOUND({ data: ORDER_NOT_FOUND });
+
+        // A store employee may only receive for their assigned store (AC-04, NFR-01).
+        if (user.storeId !== order.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+
+        // Only an Approved or Partially Received order can be received against (GR-01).
+        if (!RECEIVABLE_STATUSES.includes(order.status)) {
+          throw errors.CONFLICT({ data: ORDER_NOT_RECEIVABLE });
+        }
 
         const received = input.lines.filter((line) => line.quantity > 0);
         const orderLines = new Map(order.lines.map((line) => [line.id, line]));
