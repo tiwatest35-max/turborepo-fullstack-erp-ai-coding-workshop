@@ -118,7 +118,12 @@ export function ReceivingPage() {
                     </li>
                   ))}
                 </ul>
-                <Button type="button" disabled={confirm.isPending} onClick={() => submit(order)}>
+                <Button
+                  type="button"
+                  aria-label={`ยืนยันการรับสินค้า ${order.number}`}
+                  disabled={confirm.isPending}
+                  onClick={() => submit(order)}
+                >
                   {confirm.isPending ? 'กำลังบันทึก…' : 'ยืนยันการรับสินค้า'}
                 </Button>
               </CardContent>

@@ -120,7 +120,7 @@ describe('ReceivingPage', () => {
     await screen.findByText('PO-DEMO-001');
 
     fireEvent.change(screen.getByLabelText('รับ SKU001'), { target: { value: '8' } });
-    fireEvent.click(screen.getByRole('button', { name: 'ยืนยันการรับสินค้า' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ยืนยันการรับสินค้า PO-DEMO-001' }));
 
     await waitFor(() => {
       const posted = fetch.mock.calls.find(([r]) => r.method === 'POST');
