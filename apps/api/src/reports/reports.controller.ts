@@ -72,13 +72,15 @@ export class ReportsController {
         unitsSold: row.unitsSold,
         totalSales: toSatang(row.total) / 100,
       }));
+      const sum = (pick: (row: DayRow) => number) =>
+        rows.reduce((total, row) => total + pick(row), 0);
       return {
         from: input.from,
         to: input.to,
         totals: {
-          documentCount: days.reduce((sum, day) => sum + day.documentCount, 0),
-          unitsSold: days.reduce((sum, day) => sum + day.unitsSold, 0),
-          totalSales: days.reduce((sum, day) => sum + Math.round(day.totalSales * 100), 0) / 100,
+          documentCount: sum((row) => row.documentCount),
+          unitsSold: sum((row) => row.unitsSold),
+          totalSales: sum((row) => toSatang(row.total)) / 100,
         },
         days,
       };
