@@ -33,6 +33,7 @@ model Store {
   stockMovements    StockMovement[]
   purchaseOrders    PurchaseOrder[]
   goodsReceipts     GoodsReceipt[]
+  sales             Sale[]
 }
 
 model User {
@@ -53,6 +54,7 @@ model User {
   decidedOrders  PurchaseOrder[] @relation("PurchaseOrderDecidedBy")
   auditLogs      AuditLog[]
   goodsReceipts  GoodsReceipt[]
+  sales          Sale[]
 }
 
 model Supplier {
@@ -84,6 +86,7 @@ model Product {
   stockMovements     StockMovement[]
   purchaseOrderLines PurchaseOrderLine[]
   goodsReceiptLines  GoodsReceiptLine[]
+  saleLines          SaleLine[]
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 }
@@ -212,23 +215,23 @@ model PurchaseOrder {
 /// when the line is saved, so later product edits never change the document (TOR 4.3).
 /// A line pointing at a product is what locks that product's SKU (MD-01).
 model PurchaseOrderLine {
-  id              String        @id @default(cuid())
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product       @relation(fields: [productId], references: [id])
-  sku             String
-  productName     String
-  unit            String
+  id               String             @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product            @relation(fields: [productId], references: [id])
+  sku              String
+  productName      String
+  unit             String
   /// Whole units, always above zero. The migration adds CHECK ("quantity" > 0).
-  quantity        Int
+  quantity         Int
   /// The purchase price per unit in THB. The migration adds CHECK ("unitPrice" >= 0).
-  unitPrice       Decimal       @db.Decimal(12, 2)
+  unitPrice        Decimal            @db.Decimal(12, 2)
   /// How much of `quantity` goods receipts have received so far (GR-02). Only goods receipt
   /// confirmation changes it. The migration adds CHECK (0 <= "receivedQuantity" <= "quantity"),
   /// so receipts can never exceed what was ordered, however they are written (GR-05).
-  receivedQuantity Int          @default(0)
-  receiptLines    GoodsReceiptLine[]
+  receivedQuantity Int                @default(0)
+  receiptLines     GoodsReceiptLine[]
 
   /// A product appears once per order (PO-01).
   @@unique([purchaseOrderId, productId])
@@ -275,6 +278,47 @@ model GoodsReceiptLine {
 
   @@index([goodsReceiptId])
   @@index([purchaseOrderLineId])
+}
+
+/// One confirmed sale in one store (SAL-03). There is no stored draft: a sale exists because it
+/// was confirmed, and the cart before that lives in the browser. The migration adds a trigger that
+/// rejects UPDATE and DELETE, so a confirmed sale cannot be edited, cancelled or returned (SAL-04).
+model Sale {
+  id       String     @id @default(cuid())
+  /// From DocumentNumberingService, e.g. SL-000001. Unique (TOR 4.3).
+  number   String     @unique
+  /// The seller's assigned store, taken from the signed-in user, never from the request.
+  storeId  String
+  store    Store      @relation(fields: [storeId], references: [id])
+  soldById String
+  soldBy   User       @relation(fields: [soldById], references: [id])
+  /// The system confirmation time. The client cannot set it. Reports use it (TOR 6.2).
+  soldAt   DateTime   @default(now())
+  lines    SaleLine[]
+
+  @@index([storeId, soldAt])
+}
+
+/// One product on a sale. SKU, name, unit and the selling price are copied from the product when
+/// the sale is confirmed, so later product edits never change the document (SAL-01, TOR 4.3).
+model SaleLine {
+  id          String  @id @default(cuid())
+  saleId      String
+  sale        Sale    @relation(fields: [saleId], references: [id])
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  sku         String
+  productName String
+  unit        String
+  /// Whole units sold, always above zero. The migration adds CHECK ("quantity" > 0).
+  quantity    Int
+  /// The product's selling price per unit in THB at confirmation, frozen here. The migration adds
+  /// CHECK ("unitPrice" >= 0).
+  unitPrice   Decimal @db.Decimal(12, 2)
+
+  /// A product appears once per sale.
+  @@unique([saleId, productId])
+  @@index([productId])
 }
 
 /// A client-supplied key that makes one write safe to repeat (GR-04). Sending the same key with

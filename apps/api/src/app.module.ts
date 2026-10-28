@@ -11,6 +11,7 @@ import { HealthModule } from './health/health.module.js';
 import { OpenApiModule } from './openapi/openapi.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { PurchaseOrdersModule } from './purchase-orders/purchase-orders.module.js';
+import { SalesModule } from './sales/sales.module.js';
 import { StockModule } from './stock/stock.module.js';
 import { StoresModule } from './stores/stores.module.js';
 import { SuppliersModule } from './suppliers/suppliers.module.js';
@@ -33,6 +34,7 @@ import { SuppliersModule } from './suppliers/suppliers.module.js';
     ProductsModule,
     PurchaseOrdersModule,
     GoodsReceiptsModule,
+    SalesModule,
     StockModule,
     StoresModule,
     SuppliersModule,
