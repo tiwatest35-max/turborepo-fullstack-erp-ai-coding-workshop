@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router';
 import { RequireAuth } from '@/components/require-auth';
 import { HomePage } from '@/routes/home';
 import { LoginPage } from '@/routes/login';
+import { MovementReportsPage } from '@/routes/movement-reports';
 import { RootLayout } from '@/routes/root-layout';
 import { ProductsPage } from '@/routes/products';
 import { PurchaseOrdersPage } from '@/routes/purchase-orders';
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
           { path: 'products', element: <ProductsPage /> },
           { path: 'purchase-orders', element: <PurchaseOrdersPage /> },
           { path: 'receiving', element: <ReceivingPage /> },
+          { path: 'reports/movements', element: <MovementReportsPage /> },
           { path: 'reports/sales', element: <SalesReportsPage /> },
           { path: 'reports/stock', element: <StockReportsPage /> },
           { path: 'stock', element: <StockPage /> },

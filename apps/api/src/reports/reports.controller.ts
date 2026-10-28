@@ -86,4 +86,79 @@ export class ReportsController {
       };
     });
   }
+
+  /** The movement-history report (RPT-03): the ledger filtered by product, store, type and date. */
+  @Roles('STORE_EMPLOYEE', 'MANAGER', 'ADMIN')
+  @Implement(contract.reports.movements)
+  movements(@CurrentUser() user: User) {
+    return implement(contract.reports.movements).handler(async ({ input, errors }) => {
+      const { page, pageSize, productId, movementType } = input;
+
+      // A store employee may only see their own store; asking for another is refused (NFR-01).
+      // A store employee with no store sees nothing. Managers and admins see all, optionally
+      // narrowed by the requested store.
+      let storeId: string | undefined;
+      if (user.role === 'STORE_EMPLOYEE') {
+        if (!user.storeId) throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        if (input.storeId && input.storeId !== user.storeId) {
+          throw errors.FORBIDDEN({ data: STORE_FORBIDDEN });
+        }
+        storeId = user.storeId;
+      } else {
+        storeId = input.storeId;
+      }
+
+      // The date range is a half-open Asia/Bangkok interval on the movement time (RPT-03).
+      const range =
+        input.from && input.to
+          ? bangkokRange(input.from, input.to)
+          : input.from
+            ? bangkokRange(input.from, input.from)
+            : input.to
+              ? bangkokRange(input.to, input.to)
+              : undefined;
+
+      const where: Prisma.StockMovementWhereInput = {
+        ...(productId && { productId }),
+        ...(storeId && { storeId }),
+        ...(movementType && { movementType }),
+        ...(range && { createdAt: { gte: range.start, lt: range.end } }),
+      };
+
+      const [rows, total] = await Promise.all([
+        this.prisma.stockMovement.findMany({
+          where,
+          include: { store: { select: { code: true } }, actor: { select: { name: true } } },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        this.prisma.stockMovement.count({ where }),
+      ]);
+
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          productId: row.productId,
+          productSku: row.productSku,
+          productName: row.productName,
+          storeId: row.storeId,
+          storeCode: row.store.code,
+          quantityChange: row.quantityChange,
+          balanceBefore: row.balanceBefore,
+          balanceAfter: row.balanceAfter,
+          movementType: row.movementType,
+          sourceDocumentType: row.sourceDocumentType,
+          sourceDocumentNumber: row.sourceDocumentNumber,
+          actorId: row.actorId,
+          actorName: row.actor.name,
+          createdAt: row.createdAt.toISOString(),
+        })),
+        page,
+        pageSize,
+        total,
+        hasMore: (page - 1) * pageSize + rows.length < total,
+      };
+    });
+  }
 }
