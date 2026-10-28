@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { call } from '@orpc/server';
 import { describe, expect, it } from 'vitest';
-import type { User } from '@erp/contracts';
+import type { StockMovementType, User } from '@erp/contracts';
 import { PrismaService } from '../database/prisma.service.js';
 import { useIntegrationDatabase } from '../test/integration.js';
 import { ReportsController } from './reports.controller.js';
@@ -155,6 +155,210 @@ describe('ReportsController (real Postgres)', () => {
       }).catch((e: unknown) => e);
 
       expect(error).toMatchObject({ code: 'BAD_REQUEST' });
+    });
+  });
+
+  describe('movements (RPT-03)', () => {
+    const movements = async (
+      user: User,
+      input: {
+        productId?: string;
+        storeId?: string;
+        movementType?: StockMovementType;
+        from?: string;
+        to?: string;
+      } = {},
+    ) => call((await controller()).movements(user), { page: 1, pageSize: 50, ...input });
+
+    /** Insert a movement row directly, with an explicit UTC time, for filter tests. */
+    async function seedMovement(opts: {
+      sku: string;
+      storeCode: string;
+      quantityChange: number;
+      movementType: StockMovementType;
+      sourceDocumentType: string;
+      sourceDocumentNumber?: string | null;
+      createdAt: string;
+    }) {
+      const product = await db.prisma.product.findUniqueOrThrow({ where: { sku: opts.sku } });
+      const store = await db.prisma.store.findUniqueOrThrow({ where: { code: opts.storeCode } });
+      const actor = await db.prisma.user.findUniqueOrThrow({
+        where: { email: 'manager01@erp.local' },
+      });
+      return db.prisma.stockMovement.create({
+        data: {
+          productId: product.id,
+          productSku: product.sku,
+          productName: product.name,
+          storeId: store.id,
+          quantityChange: opts.quantityChange,
+          // The DB CHECK requires balanceBefore + quantityChange = balanceAfter, and both >= 0.
+          balanceBefore: Math.max(0, -opts.quantityChange),
+          balanceAfter: Math.max(0, opts.quantityChange),
+          movementType: opts.movementType,
+          sourceDocumentType: opts.sourceDocumentType,
+          sourceDocumentNumber: opts.sourceDocumentNumber ?? null,
+          actorId: actor.id,
+          createdAt: new Date(opts.createdAt),
+        },
+      });
+    }
+
+    const staffB01 = () => db.userByEmail('staff_b01@erp.local');
+    const staffB02 = () => db.userByEmail('staff_b02@erp.local');
+
+    it('filters by movement type', async () => {
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: 8,
+        movementType: 'RECEIPT',
+        sourceDocumentType: 'GOODS_RECEIPT',
+        sourceDocumentNumber: 'GR-000001',
+        createdAt: '2026-10-10T05:00:00.000Z',
+      });
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: -2,
+        movementType: 'SALE',
+        sourceDocumentType: 'SALE',
+        sourceDocumentNumber: 'SL-000001',
+        createdAt: '2026-10-11T05:00:00.000Z',
+      });
+
+      const result = await movements(await manager(), { movementType: 'SALE' });
+
+      expect(result.items.every((m) => m.movementType === 'SALE')).toBe(true);
+      expect(result.items.some((m) => m.sourceDocumentNumber === 'SL-000001')).toBe(true);
+    });
+
+    it('each entry links to its source document', async () => {
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: 5,
+        movementType: 'ADJUSTMENT',
+        sourceDocumentType: 'STOCK_ADJUSTMENT',
+        sourceDocumentNumber: 'ADJ-000001',
+        createdAt: '2026-10-12T05:00:00.000Z',
+      });
+
+      const result = await movements(await manager(), { movementType: 'ADJUSTMENT' });
+
+      const adj = result.items.find((m) => m.sourceDocumentNumber === 'ADJ-000001');
+      expect(adj).toMatchObject({ sourceDocumentType: 'STOCK_ADJUSTMENT' });
+    });
+
+    it('filters by an Asia/Bangkok day range on the movement time', async () => {
+      // 2026-10-10T19:00Z is 2026-10-11 02:00 in Bangkok, so it belongs to the 11th.
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: 1,
+        movementType: 'ADJUSTMENT',
+        sourceDocumentType: 'STOCK_ADJUSTMENT',
+        sourceDocumentNumber: 'ADJ-IN',
+        createdAt: '2026-10-10T19:00:00.000Z',
+      });
+      // 2026-10-11T18:00Z is 2026-10-12 01:00 Bangkok, outside a 11th-only range.
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: 1,
+        movementType: 'ADJUSTMENT',
+        sourceDocumentType: 'STOCK_ADJUSTMENT',
+        sourceDocumentNumber: 'ADJ-OUT',
+        createdAt: '2026-10-11T18:00:00.000Z',
+      });
+
+      const result = await movements(await manager(), { from: '2026-10-11', to: '2026-10-11' });
+
+      const numbers = result.items.map((m) => m.sourceDocumentNumber);
+      expect(numbers).toContain('ADJ-IN');
+      expect(numbers).not.toContain('ADJ-OUT');
+    });
+
+    it('applies product, type and date filters together', async () => {
+      const sku001 = await db.prisma.product.findUniqueOrThrow({ where: { sku: 'SKU001' } });
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: -1,
+        movementType: 'SALE',
+        sourceDocumentType: 'SALE',
+        sourceDocumentNumber: 'SL-MATCH',
+        createdAt: '2026-10-15T05:00:00.000Z',
+      });
+      await seedMovement({
+        sku: 'SKU002',
+        storeCode: 'B01',
+        quantityChange: -1,
+        movementType: 'SALE',
+        sourceDocumentType: 'SALE',
+        sourceDocumentNumber: 'SL-OTHERPRODUCT',
+        createdAt: '2026-10-15T05:00:00.000Z',
+      });
+
+      const result = await movements(await manager(), {
+        productId: sku001.id,
+        movementType: 'SALE',
+        from: '2026-10-15',
+        to: '2026-10-15',
+      });
+
+      const numbers = result.items.map((m) => m.sourceDocumentNumber);
+      expect(numbers).toContain('SL-MATCH');
+      expect(numbers).not.toContain('SL-OTHERPRODUCT');
+    });
+
+    it('limits a store employee to their own store and lets a manager see all', async () => {
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B01',
+        quantityChange: 4,
+        movementType: 'RECEIPT',
+        sourceDocumentType: 'GOODS_RECEIPT',
+        sourceDocumentNumber: 'GR-B01',
+        createdAt: '2026-10-16T05:00:00.000Z',
+      });
+      await seedMovement({
+        sku: 'SKU001',
+        storeCode: 'B02',
+        quantityChange: 3,
+        movementType: 'RECEIPT',
+        sourceDocumentType: 'GOODS_RECEIPT',
+        sourceDocumentNumber: 'GR-B02',
+        createdAt: '2026-10-16T05:00:00.000Z',
+      });
+
+      const asB01 = await movements(await staffB01());
+      const asManager = await movements(await manager());
+
+      const b01Numbers = asB01.items.map((m) => m.sourceDocumentNumber);
+      // The employee sees their own store's movement and not the other store's.
+      expect(b01Numbers).toContain('GR-B01');
+      expect(b01Numbers).not.toContain('GR-B02');
+      expect(asB01.items.every((m) => m.storeCode === 'B01')).toBe(true);
+      // The manager sees both stores.
+      const managerNumbers = asManager.items.map((m) => m.sourceDocumentNumber);
+      expect(managerNumbers).toEqual(expect.arrayContaining(['GR-B01', 'GR-B02']));
+    });
+
+    it('refuses a store employee who asks for another store', async () => {
+      const b01 = await db.prisma.store.findUniqueOrThrow({ where: { code: 'B01' } });
+
+      const error = await movements(await staffB02(), { storeId: b01.id }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('refuses a store employee who is not assigned to a store (NFR-01)', async () => {
+      const unassigned = { ...(await staffB01()), storeId: null };
+
+      const error = await movements(unassigned).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: 'FORBIDDEN' });
     });
   });
 });
