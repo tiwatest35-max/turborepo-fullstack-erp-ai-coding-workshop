@@ -17,6 +17,7 @@
     "test": "turbo run test",
     "check": "turbo run lint typecheck test build",
     "e2e": "turbo run e2e",
+    "perf": "turbo run perf --ui=stream",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @erp/database db:generate",

@@ -36,6 +36,17 @@
     "test": {
       "dependsOn": ["^build", "db:generate"]
     },
+    "perf": {
+      "dependsOn": ["@erp/api#build"],
+      "passThroughEnv": [
+        "PERF_DATABASE",
+        "PERF_API_PORT",
+        "PERF_VIRTUAL_USERS",
+        "PERF_DURATION_SECONDS",
+        "PERF_RESULTS_DIR"
+      ],
+      "cache": false
+    },
     "e2e": {
       "dependsOn": ["@erp/api#build", "@erp/web#build"],
       "passThroughEnv": [
