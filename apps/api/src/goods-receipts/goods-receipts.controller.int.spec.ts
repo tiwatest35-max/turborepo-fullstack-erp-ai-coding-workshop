@@ -474,6 +474,110 @@ describe('GoodsReceiptsController (real Postgres)', () => {
     });
   });
 
+  /** Seam 2: concurrent confirms through the same handler path, against a real Postgres (GR-04, GR-05). */
+  describe('confirm under concurrency', () => {
+    const settle = (calls: Promise<unknown>[]) => Promise.allSettled(calls);
+
+    it('GR-05: two concurrent receipts of 12 against an order of 20 -> exactly one succeeds, received stays 12', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const body = () => ({
+        purchaseOrderId: order.id,
+        idempotencyKey: newKey(),
+        lines: [{ purchaseOrderLineId: line.id, quantity: 12 }],
+      });
+
+      const results = await settle([
+        call((await controller()).confirm(staff), body()),
+        call((await controller()).confirm(staff), body()),
+      ]);
+
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+        code: 'BAD_REQUEST',
+        data: { code: 'GR_EXCEEDS_ORDERED', action: 'correct_input' },
+      });
+      expect(
+        (await db.prisma.purchaseOrderLine.findUniqueOrThrow({ where: { id: line.id } }))
+          .receivedQuantity,
+      ).toBe(12);
+      expect(await receiptCount()).toBe(1);
+      expect(await receiptMovements()).toHaveLength(1);
+      expect(await b01Stock()).toBe(22);
+      expect(await statusOf(order.id)).toBe('PARTIALLY_RECEIVED');
+    });
+
+    it('concurrent receipts that fit together both succeed and the cumulative total is exact', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const body = () => ({
+        purchaseOrderId: order.id,
+        idempotencyKey: newKey(),
+        lines: [{ purchaseOrderLineId: line.id, quantity: 10 }],
+      });
+
+      const results = await settle([
+        call((await controller()).confirm(staff), body()),
+        call((await controller()).confirm(staff), body()),
+      ]);
+
+      expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+      expect(await receiptCount()).toBe(2);
+      expect(await b01Stock()).toBe(30);
+      expect(await statusOf(order.id)).toBe('COMPLETED');
+      const numbers = (await db.prisma.goodsReceipt.findMany()).map((r) => r.number).sort();
+      expect(numbers).toEqual(['GR-000001', 'GR-000002']);
+    });
+
+    it('GR-04: the same request fired twice at once creates one receipt and both calls get it', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const body = {
+        purchaseOrderId: order.id,
+        idempotencyKey: newKey(),
+        lines: [{ purchaseOrderLineId: line.id, quantity: 8 }],
+      };
+
+      const [a, b] = await Promise.all([
+        call((await controller()).confirm(staff), body),
+        call((await controller()).confirm(staff), body),
+      ]);
+
+      expect(a.id).toBe(b.id);
+      expect(await receiptCount()).toBe(1);
+      expect(await receiptMovements()).toHaveLength(1);
+      expect(await b01Stock()).toBe(18);
+      expect(
+        (await db.prisma.purchaseOrderLine.findUniqueOrThrow({ where: { id: line.id } }))
+          .receivedQuantity,
+      ).toBe(8);
+    });
+
+    it('a rejected over-receipt leaves its idempotency key unused, so a corrected retry with the same key succeeds', async () => {
+      const { order, line } = await demoOrder();
+      const staff = await staffB01();
+      const key = newKey();
+      const tooMany = await call((await controller()).confirm(staff), {
+        purchaseOrderId: order.id,
+        idempotencyKey: key,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 21 }],
+      }).catch((e: unknown) => e);
+      expect(tooMany).toMatchObject({ data: { code: 'GR_EXCEEDS_ORDERED' } });
+
+      // The failed attempt rolled back with its key: it is not remembered as "used".
+      const corrected = await call((await controller()).confirm(staff), {
+        purchaseOrderId: order.id,
+        idempotencyKey: key,
+        lines: [{ purchaseOrderLineId: line.id, quantity: 20 }],
+      });
+
+      expect(corrected.number).toBe('GR-000001');
+      expect(await b01Stock()).toBe(30);
+    });
+  });
+
   describe('receivable', () => {
     const listReceivable = async (user: User) =>
       call((await controller()).receivable(user), { page: 1, pageSize: 20 });
