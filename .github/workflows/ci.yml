@@ -8,6 +8,22 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The api integration tests (*.int.spec.ts) run against a real Postgres, found through
+    # DATABASE_URL. Without it, Vitest's global setup aborts the whole api test run.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d erp"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v5
 
@@ -21,6 +37,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm format:check
+
+      # Prisma 7 does not generate the client on install, and the integration harness imports
+      # it. The migrations are applied per test database from the template, so only generate
+      # is needed here; DATABASE_URL defaults to the service above.
+      - run: pnpm db:generate
 
       - run: pnpm turbo run lint typecheck test build
 
